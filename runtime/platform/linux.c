@@ -1094,12 +1094,6 @@ void plat_fs_sync_dir(const char *path) {
     }
 }
 
-// Open files never stop a rename here.
-void plat_fs_busy_reason(const char *dir, char *out, size_t cap) {
-    (void)dir;
-    if (cap) *out = 0;
-}
-
 int plat_fs_list(const char *dir, int (*cb)(const char *name, int kind, uint64_t size, void *ctx), void *ctx) {
     DIR *d = opendir(dir);
     if (!d) return fs_err(errno);
@@ -1178,10 +1172,13 @@ size_t plat_getenv(const char *name, char *out, size_t cap) {
     return n;
 }
 
-// Cached per thread: plat_rmutex_lock asks on every acquire, hundreds of thousands of times a second in play, and
-// gettid is a full syscall on Linux (Windows reads GetCurrentThreadId from the TEB). A thread's id never changes, and
-// the runtime starts child processes with posix_spawn only, so no forked copy inherits a stale id.
-uint32_t plat_thread_id(void) {
+// The kernel's id of the calling thread, kept per thread after the first call. The runtime asks for it about 700,000
+// times a second in the open world (plat_rmutex_lock in common.c, on every acquire), and syscall(SYS_gettid) enters the
+// kernel each time.
+// A thread's id never changes, and the runtime does not fork. noinline: a fiber may resume on another thread
+// (platform.h), and a caller that inlined this could reuse the address of tid it computed before a plat_fiber_switch;
+// as a call it reads the slot of the thread it runs on, as the syscall did.
+__attribute__((noinline)) uint32_t plat_thread_id(void) {
     static __thread uint32_t tid;
     if (!tid) tid = (uint32_t)syscall(SYS_gettid);
     return tid;
