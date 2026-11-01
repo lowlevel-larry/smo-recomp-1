@@ -1,6 +1,6 @@
 // Adapted from MacNativeGames games/totk/runtime/movie_host.c @ b75be8cf (MIT, Copyright (c) 2026 MacNativeGames
 // contributors).
-// movie::Decoder for VP9 on the host with libvpx (BSD-3-Clause, linked statically).
+// movie::Decoder for VP9 on the host with libvpx (BSD-3-Clause, linked statically), and H.264 with OpenH264 (below).
 // TotK's pre-rendered movies (Event/Movie/*.webm, 28 files: VP9 profile 0, 1920x1080, 30 fps, video only) play through
 // the SDK movie library in subsdk0, Android's MediaCodec over NVIDIA NvMM. Its decoder opens NVDEC through NvRm, whose
 // first NvOsDrvOpen (sdk+0x3f9050) aborts with "Use of nv::InitializeGraphics is required." because ov_gfx.c takes
@@ -30,6 +30,9 @@
 
 #include <vpx/vp8dx.h>
 #include <vpx/vpx_decoder.h>
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 #include "cfg.h"
 #include "host.h"
@@ -52,6 +55,51 @@ const char *const movie_symbols[MOVIE_ENTRIES] = {
     "_ZN5movie7Decoder15GetOutputBufferEiPNS_6BufferEPNS_9MediaDataE",
     "_ZN5movie7Decoder21GetOutputBufferFormatEiPNS_9MediaDataE"};
 
+// ---- H.264 with OpenH264 (BSD-2-Clause, Cisco), loaded at run time so that builds do not depend on it. Super Mario
+// Odyssey's movies (MovieData/*.mp4) are AVC, 480x272, 30 fps; the game's own demuxer runs as guest code, as for VP9.
+// The C ABI of wels/codec_api.h 2.x, declared here: an ISVCDecoder is a pointer to its function table.
+typedef struct { int w, h, format, stride[2]; } H264Plane;
+typedef struct {
+    int status;                                // 1: a frame is ready
+    unsigned long long in_ts, out_ts;
+    H264Plane sys;
+    unsigned char *dst[3];
+} H264Info;
+typedef struct {
+    char *recon;
+    unsigned cpu_load;
+    unsigned char target_dq;
+    int ec_idc;                                // ERROR_CON_IDC; 0 = no concealment
+    unsigned char parse_only;
+    struct { unsigned size; int bs_type; } video;   // SVideoProperty; type 0 = AVC
+} H264Param;
+typedef struct H264Vtbl H264Vtbl;
+typedef const H264Vtbl *H264Dec;
+struct H264Vtbl {
+    long (*initialize)(H264Dec *, const H264Param *);
+    long (*uninitialize)(H264Dec *);
+    int (*decode_frame)(H264Dec *, const unsigned char *, int, unsigned char **, int *, int *, int *);
+    int (*decode_frame_no_delay)(H264Dec *, const unsigned char *, int, unsigned char **, H264Info *);
+};
+static struct { int state; long (*create)(H264Dec **); void (*destroy)(H264Dec *); } H264;   // state 1 loaded, -1 absent
+
+static int h264_available(void) {
+#ifndef _WIN32
+    if (!H264.state) {
+        const char *names[] = {"libopenh264.so.8", "libopenh264.so.7", "libopenh264.so"};
+        void *lib = NULL;
+        for (int i = 0; i < 3 && !lib; i++) lib = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
+        if (lib) {
+            H264.create = (long (*)(H264Dec **))dlsym(lib, "WelsCreateDecoder");
+            H264.destroy = (void (*)(H264Dec *))dlsym(lib, "WelsDestroyDecoder");
+        }
+        H264.state = H264.create && H264.destroy ? 1 : -1;
+        rt_log("movie: H.264 decoder: %s", H264.state > 0 ? "OpenH264" : "OpenH264 not found (install openh264)");
+    }
+#endif
+    return H264.state > 0;
+}
+
 typedef struct { int index; unsigned flags; int64_t time; } Ready;
 typedef struct { int index, offset, size; int64_t time; unsigned flags; } Pending;
 typedef struct {
@@ -60,6 +108,12 @@ typedef struct {
     uint64_t events;                         // guest DecoderEvents *: EventType * per MOVIE_EV_*
     vpx_codec_ctx_t vpx;
     int vpx_live;
+    int h264;                                // 1: an H.264 decoder (OpenH264), else VP9 (libvpx)
+    H264Dec *avc;                            // the live OpenH264 decoder, or NULL
+    uint8_t *csd;                            // SPS and PPS from Configure (Annex B), fed after every (re)open
+    int ncsd;
+    uint8_t *annexb;                         // an AVCC input rewritten with start codes
+    int annexb_cap;
     uint8_t *in[IN_BUFS];                    // kernel region: the game writes the compressed frames here
     int in_free[IN_BUFS], nin_free;
     Pending pending[IN_BUFS];                // sent, not decoded yet (the worker takes them in order)
@@ -227,6 +281,75 @@ static void push_decoded(Movie *m, int slot, unsigned flags, int64_t time, int b
     m->decoded[m->ndecoded++] = (Ready){slot, flags, time};
 }
 
+static int vpx_open(Movie *m);
+
+// Length-prefixed (AVCC, as MP4 stores it) NAL units -> Annex B start codes; input that already has start codes is
+// used as it is. Returns the bytes to decode (*out) and their count, or -1 for a malformed length.
+static int to_annexb(Movie *m, const uint8_t *p, int n, const uint8_t **out) {
+    if (n >= 4 && !p[0] && !p[1] && (p[2] == 1 || (!p[2] && p[3] == 1))) {
+        *out = p;
+        return n;
+    }
+    int need = n + 64, o = 0;
+    if (m->annexb_cap < need) {
+        free(m->annexb);
+        m->annexb_cap = need * 2;
+        if (!(m->annexb = malloc((size_t)m->annexb_cap))) rt_fatal("movie: H.264 input buffer");
+    }
+    for (int i = 0; i + 4 <= n;) {
+        uint32_t len = (uint32_t)p[i] << 24 | (uint32_t)p[i + 1] << 16 | (uint32_t)p[i + 2] << 8 | p[i + 3];
+        i += 4;
+        if (len > (uint32_t)(n - i) || o + 4 + (int)len > m->annexb_cap) return -1;
+        memcpy(m->annexb + o, "\0\0\0\1", 4);
+        memcpy(m->annexb + o + 4, p + i, len);
+        o += 4 + (int)len, i += (int)len;
+    }
+    *out = m->annexb;
+    return o;
+}
+
+static int h264_open(Movie *m) {
+    if (!h264_available() || H264.create(&m->avc) || !m->avc) return 0;
+    H264Param prm = {.target_dq = 0xff, .ec_idc = 0, .video = {sizeof prm.video, 0}};
+    if ((*m->avc)->initialize(m->avc, &prm)) {
+        H264.destroy(m->avc);
+        m->avc = NULL;
+        return 0;
+    }
+    if (m->ncsd) {   // parameter sets: no picture comes out
+        unsigned char *dst[3] = {0};
+        H264Info info = {0};
+        (*m->avc)->decode_frame_no_delay(m->avc, m->csd, m->ncsd, dst, &info);
+    }
+    return 1;
+}
+
+// I420 planes with their own strides -> packed NV12 (the layout to_nv12 writes for libvpx).
+static void planes_to_nv12(unsigned char *const pl[3], int ys, int cs, uint8_t *dst, int w, int h) {
+    for (int y = 0; y < h; y++) memcpy(dst + (size_t)y * w, pl[0] + (size_t)y * ys, (size_t)w);
+    uint8_t *uv = dst + (size_t)w * h;
+    for (int y = 0; y < h / 2; y++)
+        for (int x = 0; x < w / 2; x++) {
+            uv[(size_t)y * w + 2 * x] = pl[1][(size_t)y * cs + x];
+            uv[(size_t)y * w + 2 * x + 1] = pl[2][(size_t)y * cs + x];
+        }
+}
+
+static int codec_open(Movie *m) { return m->h264 ? h264_open(m) : vpx_open(m); }
+static int codec_live(const Movie *m) { return m->h264 ? m->avc != NULL : m->vpx_live; }
+static void codec_close(Movie *m) {
+    if (m->avc) {
+        (*m->avc)->uninitialize(m->avc);
+        H264.destroy(m->avc);
+        m->avc = NULL;
+    }
+    if (m->vpx_live) {
+        vpx_codec_destroy(&m->vpx);
+        m->vpx_live = 0;
+    }
+}
+static const char *codec_name(const Movie *m) { return m->h264 ? "H.264" : "VP9"; }
+
 static int vpx_open(Movie *m) {
     vpx_codec_dec_cfg_t cfg = {.threads = VPX_THREADS, .w = (unsigned)m->w, .h = (unsigned)m->h};
     if (vpx_codec_dec_init(&m->vpx, vpx_codec_vp9_dx(), &cfg, 0) != VPX_CODEC_OK) return 0;
@@ -240,7 +363,7 @@ static void worker(void *arg) {
     Movie *m = arg;
     plat_mutex_lock(&m->mu);
     for (;;) {
-        while (!m->quit && !(m->started && m->vpx_live && m->npending && can_take(m, &m->pending[0])))
+        while (!m->quit && !(m->started && codec_live(m) && m->npending && can_take(m, &m->pending[0])))
             plat_cond_wait(&m->work, &m->mu);
         if (m->quit) break;
         Pending p = m->pending[0];
@@ -259,8 +382,25 @@ static void worker(void *arg) {
         plat_mutex_unlock(&m->mu);
         if (p.size > 0) {
             uint64_t t0 = kern_now_ns();
-            e = vpx_codec_decode(&m->vpx, m->in[p.index] + p.offset, (unsigned)p.size, NULL, 0);
-            if (e == VPX_CODEC_OK) {
+            if (m->h264) {
+                const uint8_t *src;
+                int n = to_annexb(m, m->in[p.index] + p.offset, p.size, &src);
+                unsigned char *pl[3] = {0};
+                H264Info info = {0};
+                int st = n < 0 ? -1 : (*m->avc)->decode_frame_no_delay(m->avc, src, n, pl, &info);
+                if (st && m->st.errors < 4) {
+                    const uint8_t *q = m->in[p.index] + p.offset;
+                    rt_log("movie: OpenH264 state %#x, input %d bytes %02x %02x %02x %02x %02x %02x %02x %02x flags %#x", st,
+                           p.size, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], p.flags);
+                }
+                if (st) e = VPX_CODEC_CORRUPT_FRAME;
+                else if (info.status == 1) {
+                    if (info.sys.w != w || info.sys.h != h) bad = "layout";
+                    else planes_to_nv12(pl, info.sys.stride[0], info.sys.stride[1], dst, w, h);
+                    got = 1;
+                }
+            } else if ((e = vpx_codec_decode(&m->vpx, m->in[p.index] + p.offset, (unsigned)p.size, NULL, 0)) ==
+                       VPX_CODEC_OK) {
                 vpx_codec_iter_t it = NULL;
                 const vpx_image_t *img;
                 while ((img = vpx_codec_get_frame(&m->vpx, &it)) != NULL) {
@@ -280,7 +420,7 @@ static void worker(void *arg) {
         if (p.size > 0) {
             m->st.decode_ns += dt;
             if (dt > m->st.max_ns) m->st.max_ns = dt;
-            if (bad) rt_fatal("movie: VP9 frame layout differs from the configured %dx%d I420", w, h);
+            if (bad) rt_fatal("movie: %s frame layout differs from the configured %dx%d I420", codec_name(m), w, h);
             if (e != VPX_CODEC_OK || !got) {
                 m->out_held[slot] = 0;
                 if (e != VPX_CODEC_OK) {
@@ -288,9 +428,9 @@ static void worker(void *arg) {
                     m->last_error = ST_ERROR;
                     m->owed |= 1u << MOVIE_EV_ERROR;
                     if (m->st.errors <= 4) {
-                        const char *d = vpx_codec_error_detail(&m->vpx);
-                        rt_log("movie: VP9 decode error on a %d-byte frame at %lld us: %s", p.size, (long long)p.time,
-                               d ? d : vpx_codec_err_to_string(e));
+                        const char *d = m->h264 ? "OpenH264" : vpx_codec_error_detail(&m->vpx);
+                        rt_log("movie: %s decode error on a %d-byte frame at %lld us: %s", codec_name(m), p.size,
+                               (long long)p.time, d ? d : vpx_codec_err_to_string(e));
                     }
                 }
             } else {
@@ -343,10 +483,7 @@ static void reset_queues(Movie *m) {
     m->t0 = 0;
 }
 static void release_codec(Movie *m) {   // m->mu held, worker quiesced
-    if (m->vpx_live) {
-        vpx_codec_destroy(&m->vpx);
-        m->vpx_live = 0;
-    }
+    codec_close(m);
     for (int i = 0; i < IN_BUFS; i++) {
         if (m->in[i]) mem_kernel_free(m->in[i], IN_CAP);
         m->in[i] = NULL;
@@ -439,9 +576,10 @@ static void ov_ctor(Cpu *c) {
     uint64_t obj = arg_x(c, 0);
     int type = (int)arg_x(c, 1), format = (int)arg_x(c, 2), mode = (int)arg_x(c, 3);
     guest_init();
-    if (type != MOVIE_TYPE_VP9 || mode != MOVIE_MODE_BUFFER || host_off()) {
+    int h264 = type == MOVIE_TYPE_H264 && mode == MOVIE_MODE_BUFFER && h264_available();
+    if ((type != MOVIE_TYPE_VP9 && !h264) || mode != MOVIE_MODE_BUFFER || host_off()) {
         rt_log("movie: decoder type %d mode %d format %d left to the library%s", type, mode, format,
-               host_off() ? " (TOTK_MOVIE_HOST=0)" : " (only VP9 in buffer mode runs on the host)");
+               host_off() ? " (TOTK_MOVIE_HOST=0)" : " (only VP9 and H.264 in buffer mode run on the host)");
         pass(c, MOVIE_CTOR);
         return;
     }
@@ -449,6 +587,7 @@ static void ov_ctor(Cpu *c) {
     if (!m) rt_fatal("movie: decoder allocation");
     m->guest = obj;
     m->format = format;
+    m->h264 = h264;
     plat_mutex_init(&m->mu);
     plat_cond_init(&m->work);
     plat_cond_init(&m->idle);
@@ -464,7 +603,8 @@ static void ov_ctor(Cpu *c) {
     plat_mutex_unlock(&g_lock);
     ST64(obj, G.vptr);
     ST64(obj + 8, U(m));
-    rt_log("movie: VP9 decoder %#llx on the host (libvpx %s), output format %d", (unsigned long long)obj,
+    if (h264) rt_log("movie: H.264 decoder %#llx on the host (OpenH264), output format %d", (unsigned long long)obj, format);
+    else rt_log("movie: VP9 decoder %#llx on the host (libvpx %s), output format %d", (unsigned long long)obj,
            vpx_codec_version_str(), format);
 }
 
@@ -491,6 +631,8 @@ static void destroy(Cpu *c, uint64_t obj) {
     rt_log("movie: decoder %#llx destroyed after %llu frames (%llu dropped to keep time)", (unsigned long long)obj,
            (unsigned long long)m->st.frames, (unsigned long long)m->st.dropped);
     release_codec(m);
+    free(m->csd);
+    free(m->annexb);
     free(m);
     ST64(obj, G.vptr);   // what the library's destructor leaves (no DecoderImpl)
     ST64(obj + 8, 0);
@@ -525,7 +667,8 @@ static void ov_configure(Cpu *c) {
     md_find_int32(c, md, "width", &w);
     md_find_int32(c, md, "height", &h);
     const char *mime = (const char *)(uintptr_t)mime_p;
-    if (!mime || strcmp(mime, "video/x-vnd.on2.vp9") || w <= 0 || h <= 0 || w > 8192 || h > 8192 || (w | h) & 1) {
+    if (!mime || strcmp(mime, m->h264 ? "video/avc" : "video/x-vnd.on2.vp9") || w <= 0 || h <= 0 || w > 8192 ||
+        h > 8192 || (w | h) & 1) {
         rt_log("movie: configure: mime %s %dx%d not supported", mime ? mime : "(none)", w, h);
         ret_x(c, ST_UNSUPPORTED);
         return;
@@ -535,7 +678,54 @@ static void ov_configure(Cpu *c) {
     release_codec(m);
     m->w = w;
     m->h = h;
-    if (!vpx_open(m)) rt_fatal("movie: libvpx VP9 decoder initialisation");
+    if (m->h264) {   // the parameter sets (csd-0: SPS, csd-1: PPS), kept for every reopen
+        free(m->csd);
+        m->csd = NULL;
+        m->ncsd = 0;
+        uint64_t find = ldr_symbol("_ZNK5movie9MediaData10FindBufferEPKcPPNS_6BufferE");
+        uint64_t b_size = ldr_symbol("_ZNK5movie6Buffer4SizeEv"), b_off = ldr_symbol("_ZNK5movie6Buffer6OffsetEv");
+        for (int k = 0; k < 2 && find && b_size && b_off; k++) {
+            uint64_t buf = 0;
+            if (!(uint8_t)rt_call(c, find, 3, md, U(k ? "csd-1" : "csd-0"), U(&buf)) || !buf) continue;
+            uint64_t base = rt_call(c, G.buf_base, 1, buf);
+            int off = (int)rt_call(c, b_off, 1, buf), n = (int)rt_call(c, b_size, 1, buf);
+            if (!base || n <= 0 || n > (1 << 16)) continue;
+            const uint8_t *src = (const uint8_t *)(uintptr_t)(base + (uint64_t)off);
+            int sc = n >= 4 && !src[0] && !src[1] && (src[2] == 1 || (!src[2] && src[3] == 1));
+            uint8_t *grown = realloc(m->csd, (size_t)m->ncsd + (size_t)n + 4);
+            if (!grown) rt_fatal("movie: H.264 parameter sets");
+            m->csd = grown;
+            if (!sc) memcpy(m->csd + m->ncsd, "\0\0\0\1", 4), m->ncsd += 4;
+            memcpy(m->csd + m->ncsd, src, (size_t)n);
+            m->ncsd += n;
+        }
+        // SMO's demuxer (movie::Extractor on an MP4) gives them as "avcc": the avcC box, an AVCDecoderConfigurationRecord
+        // {version, profile, compatibility, level, 6 bits + length size - 1, 3 bits + SPS count, (u16 size, SPS)...,
+        // PPS count, (u16 size, PPS)...}
+        uint64_t avcc = 0;
+        if (!m->ncsd && find && b_size && b_off && (uint8_t)rt_call(c, find, 3, md, U("avcc"), U(&avcc)) && avcc) {
+            uint64_t base = rt_call(c, G.buf_base, 1, avcc);
+            int off = (int)rt_call(c, b_off, 1, avcc), n = (int)rt_call(c, b_size, 1, avcc);
+            const uint8_t *r = base ? (const uint8_t *)(uintptr_t)(base + (uint64_t)off) : NULL;
+            if (r && n >= 7 && n < (1 << 16) && r[0] == 1 && (m->csd = malloc((size_t)n * 2))) {
+                int i = 5;
+                for (int set = 0; set < 2 && i < n; set++) {
+                    int count = set ? r[i] : r[i] & 0x1f;
+                    i++;
+                    for (int k = 0; k < count && i + 2 <= n; k++) {
+                        int len = r[i] << 8 | r[i + 1];
+                        i += 2;
+                        if (len > n - i) break;
+                        memcpy(m->csd + m->ncsd, "\0\0\0\1", 4);
+                        memcpy(m->csd + m->ncsd + 4, r + i, (size_t)len);
+                        m->ncsd += 4 + len, i += len;
+                    }
+                }
+            }
+        }
+        rt_log("movie: H.264 parameter sets from the track: %d bytes", m->ncsd);
+    }
+    if (!codec_open(m)) rt_fatal("movie: %s decoder initialisation", codec_name(m));
     for (int i = 0; i < IN_BUFS; i++) m->in[i] = mem_kernel_alloc(IN_CAP, 0x1000);
     for (int i = 0; i < OUT_BUFS; i++)
         if (!(m->out[i] = malloc((size_t)frame_bytes(m)))) rt_fatal("movie: output buffers");
@@ -544,7 +734,7 @@ static void ov_configure(Cpu *c) {
     m->configured = 1;
     m->last_error = 0;
     unlock_back(m, away);
-    rt_log("movie: configured %dx%d VP9, %d input buffers of %d KiB, %d output frames of %d bytes", w, h, IN_BUFS,
+    rt_log("movie: configured %dx%d %s, %d input buffers of %d KiB, %d output frames of %d bytes", w, h, codec_name(m), IN_BUFS,
            IN_CAP >> 10, OUT_BUFS, frame_bytes(m));
     ret_x(c, ST_OK);
 }
@@ -639,9 +829,8 @@ static void ov_flush(Cpu *c) {
     plat_mutex_lock(&m->mu);
     int away = quiesce(m);
     if (m->configured) {
-        vpx_codec_destroy(&m->vpx);
-        m->vpx_live = 0;
-        if (!vpx_open(m)) rt_fatal("movie: libvpx VP9 decoder re-initialisation");
+        codec_close(m);
+        if (!codec_open(m)) rt_fatal("movie: %s decoder re-initialisation", codec_name(m));
         reset_queues(m);
     }
     unlock_back(m, away);

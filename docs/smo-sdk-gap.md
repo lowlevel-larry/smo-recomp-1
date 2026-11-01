@@ -2,8 +2,8 @@
 
 Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assinatura difere": override para o mesmo nome qualificado com outra assinatura (SDK 20 do TotK), candidato a adaptar; "falta": nenhum override, roda o código do próprio `sdk` do jogo (o padrão; só vira trabalho se esse código precisar de serviço do Horizon que o runtime não emula).
 
-- Imports nn:: dos módulos: 566 (tem 122, assinatura difere 0, falta 444)
-- Overrides do runtime: 215; sem referência em nenhum módulo do SMO: 3
+- Imports nn:: dos módulos: 566 (tem 123, assinatura difere 0, falta 443)
+- Overrides do runtime: 216; sem referência em nenhum módulo do SMO: 3
 - Imports não-nn (libc, NVN, etc.): 728
 
 ## Por namespace
@@ -15,7 +15,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::hid` | 23 | 0 | 26 |
 | `nn::socket` | 1 | 0 | 26 |
 | `nn::fontll` | 0 | 0 | 24 |
-| `nn::oe` | 16 | 0 | 7 |
+| `nn::oe` | 17 | 0 | 6 |
 | `nn::util` | 0 | 0 | 22 |
 | `nn::fs` | 21 | 0 | 0 |
 | `nn::account` | 7 | 0 | 10 |
@@ -118,7 +118,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::account::GetUserId(nn::account::Uid*, nn::account::UserHandle const&)` | `ov_user_id` (runtime/ov_system.c) |
 | `nn::account::Initialize()` | `ov_account_initialize` (runtime/ov_system.c) |
 | `nn::account::IsNetworkServiceAccountAvailable(bool*, nn::account::UserHandle const&)` | `ov_nsa_available` (runtime/smo_ov_system.c) |
-| `nn::account::OpenPreselectedUser(nn::account::UserHandle*)` | `ov_open_user` (runtime/ov_system.c) |
+| `nn::account::OpenPreselectedUser(nn::account::UserHandle*)` | `ov_open_preselected_user` (runtime/smo_ov_system.c) |
 | `nn::bcat::Initialize()` | `ov_bcat_initialize` (runtime/smo_ov_network.c) |
 | `nn::bcat::MountDeliveryCacheStorage()` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
 | `nn::bcat::RequestSyncDeliveryCache(nn::bcat::DeliveryCacheProgress*)` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
@@ -194,6 +194,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::oe::GetDesiredLanguage()` | `ov_desired_language` (runtime/ov_system.c) |
 | `nn::oe::GetExpectedVolumeBalance(float*, float*)` | `ov_get_balance` (runtime/ov_system.c) |
 | `nn::oe::GetOperationMode()` | `ov_operation_mode` (runtime/ov_system.c) |
+| `nn::oe::GetPerformanceConfiguration(nn::oe::PerformanceMode)` | `ov_get_performance_config` (runtime/smo_ov_system.c) |
 | `nn::oe::GetPerformanceMode()` | `ov_performance_mode` (runtime/ov_system.c) |
 | `nn::oe::Initialize()` | `ov_oe_initialize` (runtime/ov_system.c) |
 | `nn::oe::SetCpuBoostMode(nn::oe::CpuBoostMode)` | `ov_cpu_boost` (runtime/ov_system.c) |
@@ -473,7 +474,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::oe::DisableRecording()`
 - `nn::oe::EnableRecording()`
 - `nn::oe::EndBlockingHomeButton()`
-- `nn::oe::GetPerformanceConfiguration(nn::oe::PerformanceMode)`
 - `nn::oe::IsUserInactivityDetectionTimeExtended()`
 - `nn::oe::SetScreenShotImageOrientation(nn::album::ImageOrientation)`
 - `nn::os::AllocateMemoryBlock(unsigned long*, unsigned long)`

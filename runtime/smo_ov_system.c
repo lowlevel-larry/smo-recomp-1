@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "host.h"
+#include "platform/platform.h"
 
 // nn::settings::Language -> LanguageCode (an 8-byte NUL-padded string), the table of set:MakeLanguageCode
 // (Switchbrew "Settings services").
@@ -77,3 +78,46 @@ static void ov_open_preselected_user(Cpu *c) {
     open(c);
 }
 HOST_OVERRIDE("_ZN2nn7account19OpenPreselectedUserEPNS0_10UserHandleE", ov_open_preselected_user);
+
+// ---- nn::oe, nn::vi and nn::err calls of SMO without a TotK counterpart: system UI and capture settings that a host
+// window has no use for.
+static void ov_none(Cpu *c) { (void)c; }
+static void ov_zero(Cpu *c) { ret_x(c, 0); }
+// void SetScreenShotImageOrientation(album::ImageOrientation): the console's screenshot button; none here
+HOST_OVERRIDE("_ZN2nn2oe29SetScreenShotImageOrientationENS_5album16ImageOrientationE", ov_none);
+// void EnableRecording() / DisableRecording(): video capture allowed or not
+HOST_OVERRIDE("_ZN2nn2oe15EnableRecordingEv", ov_none);
+HOST_OVERRIDE("_ZN2nn2oe16DisableRecordingEv", ov_none);
+// void BeginBlockingHomeButton() / EndBlockingHomeButton(): the HOME menu, which does not exist here
+HOST_OVERRIDE("_ZN2nn2oe23BeginBlockingHomeButtonEv", ov_none);
+HOST_OVERRIDE("_ZN2nn2oe21EndBlockingHomeButtonEv", ov_none);
+// bool IsUserInactivityDetectionTimeExtended(): the console's auto-sleep timer is never extended here
+HOST_OVERRIDE("_ZN2nn2oe37IsUserInactivityDetectionTimeExtendedEv", ov_zero);
+// nn::Result vi::SetLayerScalingMode(Layer *, ScalingMode): the swapchain scales the frame (gfx_window_sdl.c)
+HOST_OVERRIDE("_ZN2nn2vi19SetLayerScalingModeEPNS0_5LayerENS0_11ScalingModeE", ov_zero);
+// void err::ReportMultimediaError(Result, const movie::MultimediaTelemetryReport &): telemetry of the movie player
+HOST_OVERRIDE("_ZN2nn3err21ReportMultimediaErrorENS_6ResultERKN5movie25MultimediaTelemetryReportE", ov_none);
+
+// ---- diagnostics
+// bool nn::diag::IsDebuggerAttached(): SMO asks it in its heap's allocation-failure callback (main+0x97bfa0), which
+// traps when it is false. The callback's argument (x1, untouched until here) is {heap, size, alignment, ...}:
+// log it so an out-of-memory stop names the heap and the request.
+static void ob_debugger_attached(Cpu *c) {
+    uint64_t lr = c->x[30], info = c->x[1];
+    const RtLoaded *m = ldr_count() ? ldr_module(0) : NULL;
+    if (m && lr - m->base == 0x97bfac && plat_mem_readable(info, 0x28)) {
+        uint64_t heap = LD64(info), size = LD64(info + 8);
+        uint32_t align = LD32(info + 0x10);
+        rt_log("smo: allocation failed: heap %#llx, %#llx bytes (%.1f MiB), alignment %u",
+               (unsigned long long)heap, (unsigned long long)size, size / 1048576.0, align);
+        if (plat_mem_readable(heap, 0x100))
+            for (int i = 0; i < 0x100; i += 0x40)
+                rt_log("smo:   heap+%#x: %016llx %016llx %016llx %016llx %016llx %016llx %016llx %016llx", i,
+                       (unsigned long long)LD64(heap + i), (unsigned long long)LD64(heap + i + 8),
+                       (unsigned long long)LD64(heap + i + 16), (unsigned long long)LD64(heap + i + 24),
+                       (unsigned long long)LD64(heap + i + 32), (unsigned long long)LD64(heap + i + 40),
+                       (unsigned long long)LD64(heap + i + 48), (unsigned long long)LD64(heap + i + 56));
+    }
+    rt_original(c);
+}
+HOST_OBSERVER("_ZN2nn4diag18IsDebuggerAttachedEv", ob_debugger_attached);
