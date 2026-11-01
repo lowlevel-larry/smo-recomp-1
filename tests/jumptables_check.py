@@ -55,6 +55,7 @@ class Oracle:
         mu.reg_write(A.UC_ARM64_REG_CPACR_EL1, 0x300000)
         self.mu = mu
         self.set_at = self.regs = None
+        self.shift = {}               # _index_regs: left shift of the index in each index register
         self.start = self.cmp = None   # the first instruction of the bounds-check block, the bounds cmp
         self.guard = None              # _taken: the b.ls/b.lo into the dispatch block (set_at)
         self.count = None              # indices the bounds check lets through
@@ -70,34 +71,41 @@ class Oracle:
     def jump_table(self, br_pc, entry, end):
         """Targets, or None. Leaves the index set point and the registers set there in self.set_at, self.regs."""
         self.set_at = self.regs = self.start = self.cmp = self.guard = self.count = None
+        self.shift = {}
         r = self._fallthrough(br_pc, entry, end)
         if r is None:
             r = self._taken(br_pc, entry, end)
         return r
 
     def _index_regs(self, start, at, idx):
+        """Registers that carry the index between start and at, the bounds-checked one (idx) included. Also sets
+        self.shift: the left shift of the index in each of them. A bitfield extract `ubfx wd, ws, #lsb, #w` makes
+        ws carry the index shifted by lsb, so that code that extracts the index again from ws after the bounds check
+        (ubfx x8, x28, #4, #3 before the table load) sees the same index the check saw."""
         def copy_src(w):
             if (w & 0x7F800000) == 0x12000000:  # AND (imm)
-                return bits(w, 5, 5)
+                return bits(w, 5, 5), 0
             if (w & 0x7FE0FFE0) == 0x2A0003E0:  # MOV (ORR with zr)
-                return bits(w, 16, 5)
+                return bits(w, 16, 5), 0
             if (w & 0x7F800000) in (0x53000000, 0x13000000):  # UBFM/SBFM
-                return bits(w, 5, 5)
-            return None
-        regs = {idx}
+                immr, imms = bits(w, 16, 6), bits(w, 10, 6)
+                return bits(w, 5, 5), immr if imms >= immr else 0   # UBFX/SBFX: the field starts at bit immr
+            return None, 0
+        shift = {idx: 0}
         changed = True
         while changed:
             changed = False
             for a in range(start, at, 4):
                 w = self.word(a)
-                rd, src = w & 31, copy_src(w)
+                rd, (src, lsb) = w & 31, copy_src(w)
                 if src is None or src >= 31 or rd >= 31:
                     continue
-                for x, y in ((rd, src), (src, rd)):
-                    if x in regs and y not in regs:
-                        regs.add(y)
+                for x, y, d in ((rd, src, lsb), (src, rd, -lsb)):
+                    if x in shift and y not in shift and shift[x] + d >= 0:
+                        shift[y] = shift[x] + d
                         changed = True
-        return sorted(regs)
+        self.shift = shift
+        return sorted(shift)
 
     def _reset(self, entry, start):
         mu = self.mu
@@ -137,7 +145,8 @@ class Oracle:
                 if set_at != start and not self._step_to(start, set_at):
                     return None
                 for r in regs:
-                    self.mu.reg_write(A.UC_ARM64_REG_X0 + r if r < 29 else A.UC_ARM64_REG_X29, i)
+                    self.mu.reg_write(A.UC_ARM64_REG_X0 + r if r < 29 else A.UC_ARM64_REG_X29,
+                                      i << self.shift.get(r, 0))
                 if not self._step_to(set_at, br_pc):
                     return None
                 t = self._read(rn)
@@ -218,7 +227,8 @@ class Oracle:
                 if not self._step_to(start, cmp):
                     return None
                 for r in regs:
-                    self.mu.reg_write(A.UC_ARM64_REG_X0 + r if r < 29 else A.UC_ARM64_REG_X29, i)
+                    self.mu.reg_write(A.UC_ARM64_REG_X0 + r if r < 29 else A.UC_ARM64_REG_X29,
+                                      i << self.shift.get(r, 0))
                 if not self._step_to(cmp, br_pc):
                     return None
                 t = self._read(rn)
@@ -366,14 +376,23 @@ class FunctionCheck:
 
 
 def table_load(mod, s, br):
-    """Last register-offset load in [s, br): the table read of a dispatch block."""
+    """The register-offset load in [s, br) whose value reaches the br register: the table read of a dispatch block.
+
+    Walks back from the br through the instructions that compute its register (add of the entry and the base), so a
+    load the compiler scheduled between the table read and the br (ldrb w14, [x22, x8]) is not taken for it.
+    """
+    feeds = {_regno(_insn(mod, br).reg_name(_insn(mod, br).operands[0].reg))}
     a = br
     while a > s:
         a -= 4
         ins = _insn(mod, a)
+        written = _writes(ins) & feeds
+        if not written:
+            continue
         if ins and ins.mnemonic.startswith('ldr') and len(ins.operands) == 2 \
                 and ins.operands[1].type == capstone.arm64.ARM64_OP_MEM and ins.operands[1].mem.index:
             return ins
+        feeds = (feeds - written) | _reads(ins)
     return None
 
 
