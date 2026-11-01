@@ -190,6 +190,8 @@ extern const char rt_port_version[];                       // VERSION at the bui
 #define RT_V143 (rt_game_version >= 143)
 extern const int rt_game_smo;                             // 1: Super Mario Odyssey (build version smo-v*)
 #define RT_SMO (rt_game_smo)                               // SMO: SDK 7.3.2; RT_V111/RT_V143 are false
+#define RT_NAME (RT_SMO ? "SMO Recomp" : "TotK Recomp")    // what the player sees: window, Vulkan app name
+#define RT_STEM (RT_SMO ? "smo" : "totk")                  // file names: <stem>.ini, logs/<stem>.log
 
 // ---- kernel (kernel.c)
 typedef struct RtThread RtThread;

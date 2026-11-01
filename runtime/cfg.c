@@ -257,8 +257,19 @@ static int profile_of(void) {
 
 const char *cfg_device_profile(void) { return profile_of() ? "deck" : "desktop"; }
 
+// SMO builds also read every TOTK_<X> as SMO_<X>, which wins over the TOTK_ name.
+static const char *env_get(const char *name) {
+    if (RT_SMO && !strncmp(name, PREFIX, PREFIX_LEN)) {
+        char smo[96];
+        snprintf(smo, sizeof smo, "SMO_%s", name + PREFIX_LEN);
+        const char *e = getenv(smo);
+        if (e) return e;
+    }
+    return getenv(name);
+}
+
 static const char *raw_get(const char *name) {
-    const char *e = getenv(name);
+    const char *e = env_get(name);
     if (e || strncmp(name, PREFIX, PREFIX_LEN)) return e;
     int n = __atomic_load_n(&n_entries, __ATOMIC_ACQUIRE);
     for (int i = 0; i < n; i++)
@@ -279,7 +290,7 @@ int cfg_is_set(const char *name) { return raw_get(name) != NULL; }
 
 unsigned cfg_version(void) { return __atomic_load_n(&version, __ATOMIC_ACQUIRE); }
 
-int cfg_from_env(const char *name) { return getenv(name) != NULL; }
+int cfg_from_env(const char *name) { return env_get(name) != NULL; }
 
 void cfg_set(const char *name, const char *value) {
     if (strncmp(name, PREFIX, PREFIX_LEN) || !value) return;
@@ -343,7 +354,7 @@ void cfg_each_active(void (*cb)(const char *key, const char *value, int from_env
     for (size_t i = 0; i < sizeof known / sizeof *known; i++) {
         char var[80];
         snprintf(var, sizeof var, PREFIX "%s", known[i]);
-        const char *e = getenv(var);
+        const char *e = env_get(var);
         if (e) cb(known[i], e, 1, ctx);
     }
 }
@@ -615,7 +626,7 @@ static int find_ini(void) {
     char *cut = plat_last_sep(path);
     if (!cut) cut = strrchr(path, '/');
     if (!cut || cut + 10 >= path + sizeof path) return 0;
-    strcpy(cut + 1, "totk.ini");
+    snprintf(cut + 1, (size_t)(path + sizeof path - cut - 1), "%s.ini", RT_STEM);   // smo.ini in SMO builds
     snprintf(ini_path, sizeof ini_path, "%s", path);
     return 1;
 }

@@ -702,6 +702,9 @@ const char *ov_shared_font_dir(char *buf, size_t n) {
         snprintf(probe, sizeof probe, "%s/shared-fonts/0-standard.bfttf", exe);
         if (cut && plat_file_exists(probe)) snprintf(buf, n, "%s/shared-fonts", exe);
         else snprintf(buf, n, "%s/../../firmware/shared-fonts", rt_config()->romfs);
+        // SMO: without the firmware's fonts, the free stand-ins of tools/smo_substitute_fonts.py (build/substitute-fonts)
+        snprintf(probe, sizeof probe, "%s/0-standard.bfttf", buf);
+        if (RT_SMO && cut && !plat_file_exists(probe)) snprintf(buf, n, "%s/../substitute-fonts", exe);
     }
     return buf;
 }

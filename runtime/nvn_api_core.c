@@ -193,6 +193,9 @@ NVN_API(nvnDeviceInitialize) {
     memset(o, 0, sizeof *o);
     o->magic = DEV_MAGIC;
     o->flags = b->flags;
+    // NVN's default depth mode is NEAR_IS_MINUS_W (GL clip space). SMO never sets one and draws its full-screen quads at
+    // z = -w, which Vulkan's [0, w] clip range drops; TotK sets NEAR_IS_ZERO itself.
+    if (RT_SMO) __atomic_store_n(&depth_minus_w, 1, __ATOMIC_RELAXED);
     NVN_LOG("DeviceInitialize %p flags %#x, back end %s", (void *)o, o->flags, gfx_backend()->name);
     ret_x(c, 1);
 }
