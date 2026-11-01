@@ -121,12 +121,16 @@ static void ov_desired_language(Cpu *c) {
 static void ov_oe_initialize(Cpu *c) { (void)c; rt_log("oe: application environment: a local host process"); }
 
 // void SetPerformanceConfiguration(PerformanceMode mode, int config)
+static volatile int32_t perf_configs[2] = {0x00010000, 0x00020003};   // per mode; the system defaults (Switchbrew apm)
 static void ov_performance_config(Cpu *c) {
     int64_t mode = (int32_t)arg_x(c, 0);
     if (mode < 0 || mode > 1) rt_fatal("nn::oe::SetPerformanceConfiguration: invalid mode %lld", (long long)mode);
     rt_log("oe: performance request mode %lld configuration %#x: the host OS schedules the CPU", (long long)mode,
            (uint32_t)arg_x(c, 1));
+    plat_xchg32(&perf_configs[mode], (int32_t)arg_x(c, 1));
 }
+// The configuration last set for a mode (smo_ov_system.c: SMO's GetPerformanceConfiguration)
+int32_t ov_performance_configuration(int mode) { return plat_cas32(&perf_configs[mode & 1], 0, 0); }
 
 // void SetCpuBoostMode(CpuBoostMode mode)
 static void ov_cpu_boost(Cpu *c) {
@@ -741,6 +745,13 @@ static const uint8_t *font_data(Cpu *c, const char *fn, int64_t t) {
         fclose(f);
         uint64_t size = got == (size_t)len ? ov_bfttf_size(p, (uint64_t)len) : 0;
         if (!size) rt_fatal("nn::pl: shared font %s is not a BFTTF font", path);
+        // SMO's font engine (SDK 7.3.2 nn::fontll) loads the sfnt itself: it gets the font decoded after the header,
+        // where TotK's takes the BFTTF words as they are.
+        if (RT_SMO) {
+            uint32_t key = be32(p) ^ BFTTF_MAGIC;
+            for (uint64_t i = 8; i + 4 <= (uint64_t)len; i += 4)
+                for (int b = 0; b < 4; b++) p[i + b] ^= (uint8_t)(key >> (24 - 8 * b));
+        }
         fonts.size[t] = size;
         __atomic_store_n(&fonts.file[t], p, __ATOMIC_RELEASE);
         rt_log("pl: shared font %lld (%s): %llu bytes from %s", (long long)t, font_type_name(t),
@@ -821,8 +832,6 @@ HOST_OBSERVER("nnMain", obs_main);
 
 HOST_OVERRIDE("_ZN2nn7account10InitializeEv", ov_account_initialize);
 HOST_OVERRIDE("_ZN2nn7account22TryOpenPreselectedUserEPNS0_10UserHandleE", ov_open_user);
-// SMO (SDK 7.3.2): void OpenPreselectedUser(UserHandle *), the aborting form; the local account always opens
-HOST_OVERRIDE("_ZN2nn7account19OpenPreselectedUserEPNS0_10UserHandleE", ov_open_user);
 HOST_OVERRIDE("_ZN2nn7account9CloseUserERKNS0_10UserHandleE", ov_close_user);
 HOST_OVERRIDE("_ZN2nn7account9GetUserIdEPNS0_3UidERKNS0_10UserHandleE", ov_user_id);
 HOST_OVERRIDE("_ZN2nn7account16GetUserExistenceEPbRKNS0_3UidE", ov_user_existence);

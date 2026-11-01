@@ -57,3 +57,23 @@ static void ov_commit_save_data(Cpu *c) {
     commit(c);
 }
 HOST_OVERRIDE("_ZN2nn2fs14CommitSaveDataEPKc", ov_commit_save_data);
+
+// ---- nn::oe and nn::account functions SMO calls under SDK 7 names
+int32_t ov_performance_configuration(int mode);   // ov_system.c: the configuration last set for that mode
+
+// int nn::oe::GetPerformanceConfiguration(PerformanceMode mode)
+static void ov_get_performance_config(Cpu *c) {
+    int64_t mode = (int32_t)arg_x(c, 0);
+    if (mode < 0 || mode > 1) rt_fatal("nn::oe::GetPerformanceConfiguration: invalid mode %lld", (long long)mode);
+    ret_x(c, (uint32_t)ov_performance_configuration((int)mode));
+}
+HOST_OVERRIDE("_ZN2nn2oe27GetPerformanceConfigurationENS0_15PerformanceModeE", ov_get_performance_config);
+
+// void nn::account::OpenPreselectedUser(UserHandle *): the aborting form of TryOpenPreselectedUser (ov_system.c),
+// which always opens the local account
+static void ov_open_preselected_user(Cpu *c) {
+    GuestFn open = hostfn_override("_ZN2nn7account22TryOpenPreselectedUserEPNS0_10UserHandleE");
+    if (!open) rt_fatal("nn::account::OpenPreselectedUser: no host TryOpenPreselectedUser");
+    open(c);
+}
+HOST_OVERRIDE("_ZN2nn7account19OpenPreselectedUserEPNS0_10UserHandleE", ov_open_preselected_user);

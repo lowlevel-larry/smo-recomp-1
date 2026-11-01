@@ -812,6 +812,8 @@ def main():
     if stale:
         sys.exit(f'{stale[0]}: its SPIR-V header no longer matches; run python tools/build_shaders.py')
     skip = {s for s in args.skip_runtime.split(',') if s}
+    if not args.version.startswith('smo-v'):   # runtime/smo_*.c: Super Mario Odyssey only (overrides of its symbols)
+        skip |= {f.name for f in RUNTIME.glob('smo_*.c')}
     main_out = (ROOT / 'build' / args.version).resolve()
     pairs = None
     if args.make_runtime_lib:

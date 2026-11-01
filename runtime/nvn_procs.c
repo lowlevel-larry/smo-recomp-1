@@ -29,9 +29,9 @@ void nvnp_nvnDeviceGetProcAddress(Cpu *c);
 
 typedef struct { const char *name; uint64_t addr; } Proc;
 
-// NVN 53 procs that only SMO loads (smo_nvn.c), registered for SMO builds only.
+// NVN 53 procs that only SMO loads (smo_nvn.c, compiled into SMO builds only), registered for SMO builds only.
 #define NVN_PROCS_SMO(X) X(nvnQueueAcquireTexture) X(nvnDeviceApplyDeferredFinalizes)
-#define NVN_PROC(n) void nvnp_##n(Cpu *c);
+#define NVN_PROC(n) __attribute__((weak)) void nvnp_##n(Cpu *c);
 NVN_PROCS_SMO(NVN_PROC)
 #undef NVN_PROC
 

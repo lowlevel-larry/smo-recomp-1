@@ -960,8 +960,8 @@ int probe_services(void) {
         for (int k = 0; k < NOBS; k++)
             if (!strcmp(observers[k], n)) obs_bound++;
     }
-    for (int k = 0; k < NOV; k++)   // 1.2.1 lists no add-on content
-        CHECK(ovs[k].bound || (!RT_V143 && !strcmp(ovs[k].key, "aoc.ListAddOnContent")), "override %s matches no relocation",
+    for (int k = 0; k < NOV; k++)   // 1.2.1 lists no add-on content; SMO imports only part of TotK's set
+        CHECK(RT_SMO || ovs[k].bound || (!RT_V143 && !strcmp(ovs[k].key, "aoc.ListAddOnContent")), "override %s matches no relocation",
               ovs[k].name);
     for (int k = 0; k < NOBS; k++) CHECK(hostfn_observer(observers[k]), "observer %s is not linked", observers[k]);
     CHECK(obs_bound == NOBS, "%d of %d observers match a JUMP_SLOT", obs_bound, NOBS);
@@ -977,6 +977,7 @@ int probe_services(void) {
                      !strcmp(n, KERN_SYM_INITIALIZE_FIBER) ||
                      !strcmp(n, KERN_SYM_FINALIZE_FIBER) || !strcmp(n, KERN_SYM_SWITCH_TO_FIBER) ||
                      !strcmp(n, KERN_SYM_GET_CURRENT_FIBER);
+        theirs |= RT_SMO;   // SMO builds also link runtime/smo_*.c, whose overrides this TotK probe does not cover
         others += theirs;
         CHECK(mine || theirs, "override %s is linked but not probed", n);
     }
