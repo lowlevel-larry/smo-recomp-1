@@ -37,6 +37,45 @@ STARTUP_DIRS = ('ShaderData/', 'SystemData/')
 # Directories that can hold shaders at all (agl packages, effects, layouts, system data, model archives).
 SHADER_DIRS = STARTUP_DIRS + ('EffectData/', 'LayoutData/', 'ObjectData/', 'StageData/')
 MAX_SIZE = 512 << 20
+# NVN control sections of SDK 7.3.2 are 0x7d1 bytes (TotK's NVN: 0x880 or 0x88c), with c1 and length at +0x700 and the
+# stage at +0x714 as in the newer layout. Keys hash them padded with zeros to 0x880, as runtime/gfx_shader.c does.
+CONTROL_SIZE = 0x7d1
+CONTROL_KEY = 0x880
+
+
+def sharcb_shaders(data, rejected):
+    """shader_census.sharcb_shaders for SDK 7 packages: records <u64 code offset in the pool, u32 control size 0x7d1,
+    i32 offset of the control from the record>."""
+    if len(data) < 32 or data[:4] != b'BAHS':
+        raise ValueError('expected an agl shader package')
+    start, pool_size, pool = struct.unpack_from('<3I', data, 20)
+    if not 32 <= start <= pool or pool + pool_size > len(data):
+        raise ValueError('agl shader package layout outside the file')
+    seen = set()
+    at = start
+    size = struct.pack('<I', CONTROL_SIZE)
+    while (at := data.find(size, at, pool)) >= 0:
+        record, at = at - 8, at + 4
+        if record < start or record % 4:
+            continue
+        code_off = struct.unpack_from('<Q', data, record)[0]
+        control_at = record + struct.unpack_from('<i', data, record + 12)[0]
+        if not start <= control_at <= pool - CONTROL_SIZE or code_off >= pool_size:
+            continue
+        control = data[control_at:control_at + CONTROL_SIZE]
+        if control[:4] != sc.CONTROL_MAGIC:
+            rejected[0] += 1
+            continue
+        c1, length = struct.unpack_from('<II', control, 0x700)
+        stage = sc.STAGE_IDS.get(struct.unpack_from('<I', control, 0x714)[0])
+        if not stage or not 0 < length <= pool_size - code_off or c1 > length:
+            continue
+        control += bytes(CONTROL_KEY - CONTROL_SIZE)
+        code = data[pool + code_off:pool + code_off + length]
+        key = sc.digest(control + code)
+        if key not in seen:
+            seen.add(key)
+            yield key, stage, control, code
 
 
 def yaz0(raw):
@@ -62,7 +101,7 @@ def inventory(romfs, exefs, everything):
 
     def visit(origin, name, data, startup, depth=0):
         if data[:4] == b'BAHS':
-            add('sharcb', name, sc.sharcb_shaders(data, rejected), True)
+            add('sharcb', name, sharcb_shaders(data, rejected), True)
             return
         if data[:4] == b'SARC':
             if depth > 4:

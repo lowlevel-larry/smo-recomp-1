@@ -45,6 +45,17 @@
 #include "platform/platform.h"
 
 #define CONTROL_SIZE 0x880
+// SMO's NVN (SDK 7.3.2) control sections are 0x7d1 bytes, with c1, length and stage at the same offsets; the bytes the
+// game keeps after them are other data. Keys and stored inputs keep the 0x880-byte layout with that tail zeroed
+// (tools/smo_shader_census.py pads the same way).
+#define CONTROL_SIZE_SMO 0x7d1
+
+static const uint8_t *control_view(const uint8_t *control, uint8_t buf[CONTROL_SIZE]) {
+    if (!RT_SMO || !control) return control;
+    memcpy(buf, control, CONTROL_SIZE_SMO);
+    memset(buf + CONTROL_SIZE_SMO, 0, CONTROL_SIZE - CONTROL_SIZE_SMO);
+    return buf;
+}
 #define CODE_SKIP 0x30                                     // graphics code starts after the first 0x30 bytes of the program
 #define BUCKETS 4096
 #define LINE_MAX_LEN 4096
@@ -1189,6 +1200,8 @@ static const GfxShader *get_one(const Req *r, int stage, const uint8_t *control,
 
 const GfxShader *gfx_shader_get(int stage, const uint8_t *control, const uint8_t *code, uint64_t code_size,
                                 const uint8_t *c1, const GfxShaderAnswers *a) {
+    uint8_t view[CONTROL_SIZE];
+    control = control_view(control, view);
     Req r;
     if (!req_init(&r, stage, control, code, code_size, c1, a)) return NULL;
     const GfxShader *s = get_one(&r, stage, control, code, a);
@@ -1391,6 +1404,8 @@ static void xlate_worker(void *arg) {
 const GfxShader *gfx_shader_get_async(int stage, const uint8_t *control, const uint8_t *code, uint64_t code_size,
                                       const GfxShaderAnswers *a, int *pending) {
     *pending = 0;
+    uint8_t view[CONTROL_SIZE];
+    control = control_view(control, view);
     Req r;
     if (!req_init(&r, stage, control, code, code_size, NULL, a)) return NULL;
     const GfxShader *s = get_async_one(r, stage, control, code, a, pending);
