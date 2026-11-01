@@ -2,8 +2,8 @@
 
 Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assinatura difere": override para o mesmo nome qualificado com outra assinatura (SDK 20 do TotK), candidato a adaptar; "falta": nenhum override, roda o código do próprio `sdk` do jogo (o padrão; só vira trabalho se esse código precisar de serviço do Horizon que o runtime não emula).
 
-- Imports nn:: dos módulos: 566 (tem 62, assinatura difere 0, falta 504)
-- Overrides do runtime: 140; sem referência em nenhum módulo do SMO: 3
+- Imports nn:: dos módulos: 566 (tem 122, assinatura difere 0, falta 444)
+- Overrides do runtime: 215; sem referência em nenhum módulo do SMO: 3
 - Imports não-nn (libc, NVN, etc.): 728
 
 ## Por namespace
@@ -12,35 +12,37 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 |---|---|---|---|
 | `nn::audio` | 0 | 0 | 106 |
 | `nn::os` | 0 | 0 | 69 |
-| `nn::hid` | 11 | 0 | 38 |
-| `nn::socket` | 0 | 0 | 27 |
+| `nn::hid` | 23 | 0 | 26 |
+| `nn::socket` | 1 | 0 | 26 |
 | `nn::fontll` | 0 | 0 | 24 |
 | `nn::oe` | 16 | 0 | 7 |
 | `nn::util` | 0 | 0 | 22 |
-| `nn::fs` | 2 | 0 | 19 |
-| `nn::account` | 4 | 0 | 13 |
-| `nn::bcat` | 0 | 0 | 17 |
+| `nn::fs` | 21 | 0 | 0 |
+| `nn::account` | 7 | 0 | 10 |
+| `nn::bcat` | 4 | 0 | 13 |
 | `nn::diag` | 0 | 0 | 14 |
 | `nn::nfp` | 12 | 0 | 1 |
 | `nn::sf` | 0 | 0 | 11 |
 | `nn::mem` | 0 | 0 | 9 |
-| `nn::nifm` | 0 | 0 | 8 |
+| `nn::nifm` | 8 | 0 | 0 |
 | `nn::web` | 0 | 0 | 8 |
-| `nn::prepo` | 1 | 0 | 5 |
+| `nn::friends` | 1 | 0 | 5 |
+| `nn::prepo` | 6 | 0 | 0 |
 | `nn::swkbd` | 1 | 0 | 5 |
 | `nn::time` | 6 | 0 | 0 |
 | `nn::vi` | 5 | 0 | 1 |
-| `nn::friends` | 0 | 0 | 6 |
 | `nn::lmem` | 0 | 0 | 6 |
 | `nn::pl` | 3 | 0 | 2 |
 | `nn::crypto` | 0 | 0 | 5 |
 | `nn::image` | 0 | 0 | 5 |
-| `nn::pctl` | 0 | 0 | 4 |
+| `nn::pctl` | 4 | 0 | 0 |
 | `nn::err` | 1 | 0 | 1 |
 | `nn::ssl` | 0 | 0 | 2 |
+| `nn::settings` | 1 | 0 | 0 |
+| `nnsslInitialize` | 1 | 0 | 0 |
+| `void nn::hid` | 1 | 0 | 0 |
 | `nn::detail` | 0 | 0 | 1 |
 | `nn::nsd` | 0 | 0 | 1 |
-| `nn::settings` | 0 | 0 | 1 |
 | `nnMain` | 0 | 0 | 1 |
 | `nnResultGetDescription` | 0 | 0 | 1 |
 | `nnResultGetModule` | 0 | 0 | 1 |
@@ -105,31 +107,68 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nnsslConnectionWrite` | 0 | 0 | 1 |
 | `nnsslContextDestroy` | 0 | 0 | 1 |
 | `nnsslContextGetContextId` | 0 | 0 | 1 |
-| `nnsslInitialize` | 0 | 0 | 1 |
-| `void nn::hid` | 0 | 0 | 1 |
 
 ## Tem
 
 | Símbolo | Override |
 |---|---|
 | `nn::account::CloseUser(nn::account::UserHandle const&)` | `ov_close_user` (runtime/ov_system.c) |
+| `nn::account::GetLastOpenedUser(nn::account::Uid*)` | `ov_last_opened_user` (runtime/smo_ov_system.c) |
 | `nn::account::GetNickname(nn::account::Nickname*, nn::account::Uid const&)` | `ov_nickname` (runtime/ov_system.c) |
 | `nn::account::GetUserId(nn::account::Uid*, nn::account::UserHandle const&)` | `ov_user_id` (runtime/ov_system.c) |
 | `nn::account::Initialize()` | `ov_account_initialize` (runtime/ov_system.c) |
+| `nn::account::IsNetworkServiceAccountAvailable(bool*, nn::account::UserHandle const&)` | `ov_nsa_available` (runtime/smo_ov_system.c) |
+| `nn::account::OpenPreselectedUser(nn::account::UserHandle*)` | `ov_open_user` (runtime/ov_system.c) |
+| `nn::bcat::Initialize()` | `ov_bcat_initialize` (runtime/smo_ov_network.c) |
+| `nn::bcat::MountDeliveryCacheStorage()` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
+| `nn::bcat::RequestSyncDeliveryCache(nn::bcat::DeliveryCacheProgress*)` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
+| `nn::bcat::UnmountDeliveryCacheStorage()` | `ov_bcat_unmount` (runtime/smo_ov_network.c) |
 | `nn::err::ShowError(nn::Result)` | `ov_show_error` (runtime/ov_system.c) |
+| `nn::friends::Initialize()` | `ov_friends_initialize` (runtime/smo_ov_network.c) |
+| `nn::fs::CloseDirectory(nn::fs::DirectoryHandle)` | `ov_close_directory` (runtime/fs_host.c) |
+| `nn::fs::CloseFile(nn::fs::FileHandle)` | `ov_close_file` (runtime/fs_host.c) |
+| `nn::fs::CommitSaveData(char const*)` | `ov_commit_save_data` (runtime/smo_ov_system.c) |
+| `nn::fs::CreateDirectory(char const*)` | `ov_create_directory` (runtime/fs_host.c) |
+| `nn::fs::CreateFile(char const*, long)` | `ov_create_file` (runtime/fs_host.c) |
+| `nn::fs::DeleteFile(char const*)` | `ov_delete_file` (runtime/fs_host.c) |
+| `nn::fs::EnsureSaveData(nn::account::Uid const&)` | `ov_ensure_save_data` (runtime/smo_ov_system.c) |
+| `nn::fs::FlushFile(nn::fs::FileHandle)` | `ov_flush_file` (runtime/fs_host.c) |
+| `nn::fs::GetEntryType(nn::fs::DirectoryEntryType*, char const*)` | `ov_entry_type` (runtime/fs_host.c) |
+| `nn::fs::GetFileSize(long*, nn::fs::FileHandle)` | `ov_file_size` (runtime/fs_host.c) |
 | `nn::fs::MountRom(char const*, void*, unsigned long)` | `ov_mount_rom` (runtime/romfs.c) |
+| `nn::fs::MountSaveData(char const*, nn::account::Uid const&)` | `ov_mount_save` (runtime/fs_host.c) |
+| `nn::fs::OpenDirectory(nn::fs::DirectoryHandle*, char const*, int)` | `ov_open_directory` (runtime/fs_host.c) |
+| `nn::fs::OpenFile(nn::fs::FileHandle*, char const*, int)` | `ov_open_file` (runtime/fs_host.c) |
 | `nn::fs::QueryMountRomCacheSize(unsigned long*)` | `ov_query_cache` (runtime/romfs.c) |
+| `nn::fs::ReadDirectory(long*, nn::fs::DirectoryEntry*, nn::fs::DirectoryHandle, long)` | `ov_read_directory` (runtime/fs_host.c) |
+| `nn::fs::ReadFile(unsigned long*, nn::fs::FileHandle, long, void*, unsigned long)` | `ov_read_file` (runtime/fs_host.c) |
+| `nn::fs::ReadFile(unsigned long*, nn::fs::FileHandle, long, void*, unsigned long, nn::fs::ReadOption const&)` | `ov_read_options` (runtime/fs_host.c) |
+| `nn::fs::SetFileSize(nn::fs::FileHandle, long)` | `ov_set_file_size` (runtime/fs_host.c) |
+| `nn::fs::Unmount(char const*)` | `ov_unmount` (runtime/fs_host.c) |
+| `nn::fs::WriteFile(nn::fs::FileHandle, long, void const*, unsigned long, nn::fs::WriteOption const&)` | `ov_write_file` (runtime/fs_host.c) |
+| `nn::hid::FinalizeSevenSixAxisSensor()` | `ov_result_ok` (runtime/smo_ov_input.c) |
+| `nn::hid::GetDebugPadState(nn::hid::DebugPadState*)` | `ov_debug_pad_state` (runtime/smo_ov_input.c) |
 | `nn::hid::GetNpadStates(nn::hid::NpadFullKeyState*, int, unsigned int const&)` | `ov_states_full_key` (runtime/ov_input.c) |
 | `nn::hid::GetNpadStates(nn::hid::NpadHandheldState*, int, unsigned int const&)` | `ov_states_handheld` (runtime/ov_input.c) |
 | `nn::hid::GetNpadStates(nn::hid::NpadJoyDualState*, int, unsigned int const&)` | `ov_states_joycon` (runtime/ov_input.c) |
 | `nn::hid::GetNpadStates(nn::hid::NpadJoyLeftState*, int, unsigned int const&)` | `ov_states_joycon` (runtime/ov_input.c) |
 | `nn::hid::GetNpadStates(nn::hid::NpadJoyRightState*, int, unsigned int const&)` | `ov_states_joycon` (runtime/ov_input.c) |
 | `nn::hid::GetNpadStyleSet(unsigned int const&)` | `ov_style_set` (runtime/ov_input.c) |
+| `nn::hid::GetSevenSixAxisSensorStates(nn::hid::SevenSixAxisSensorState*, int)` | `ov_seven_states` (runtime/smo_ov_input.c) |
+| `nn::hid::InitializeDebugPad()` | `ov_nothing` (runtime/smo_ov_input.c) |
 | `nn::hid::InitializeNpad()` | `ov_initialize_npad` (runtime/ov_input.c) |
+| `nn::hid::InitializeSevenSixAxisSensor(void*, unsigned long)` | `ov_result_ok` (runtime/smo_ov_input.c) |
+| `nn::hid::InitializeTouchScreen()` | `ov_nothing` (runtime/smo_ov_input.c) |
+| `nn::hid::IsSevenSixAxisSensorAtRest()` | `ov_seven_at_rest` (runtime/smo_ov_input.c) |
+| `nn::hid::MergeSingleJoyAsDualJoy(unsigned int const&, unsigned int const&)` | `ov_result_ok` (runtime/smo_ov_input.c) |
+| `nn::hid::ResetSevenSixAxisSensorTimestamp()` | `ov_result_ok` (runtime/smo_ov_input.c) |
+| `nn::hid::SetNpadJoyAssignmentModeDual(unsigned int const&)` | `ov_nothing` (runtime/smo_ov_input.c) |
 | `nn::hid::SetNpadJoyHoldType(nn::hid::NpadJoyHoldType)` | `ov_hold_type` (runtime/ov_input.c) |
 | `nn::hid::SetSupportedNpadIdType(unsigned int const*, unsigned long)` | `ov_supported_ids` (runtime/ov_input.c) |
 | `nn::hid::SetSupportedNpadStyleSet(nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)` | `ov_supported_styles` (runtime/ov_input.c) |
 | `nn::hid::ShowControllerSupport(nn::hid::ControllerSupportResultInfo*, nn::hid::ControllerSupportArg const&)` | `ov_controller_support` (runtime/ov_input.c) |
+| `nn::hid::StartSevenSixAxisSensor()` | `ov_result_ok` (runtime/smo_ov_input.c) |
+| `nn::hid::StopSevenSixAxisSensor()` | `ov_result_ok` (runtime/smo_ov_input.c) |
 | `nn::nfp::AttachActivateEvent(nn::os::SystemEventType*, nn::nfp::DeviceHandle const&)` | `ov_nfp_no_device` (runtime/ov_system.c) |
 | `nn::nfp::AttachDeactivateEvent(nn::os::SystemEventType*, nn::nfp::DeviceHandle const&)` | `ov_nfp_no_device` (runtime/ov_system.c) |
 | `nn::nfp::Finalize()` | `ov_nfp_finalize` (runtime/ov_system.c) |
@@ -142,6 +181,14 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::nfp::Mount(nn::nfp::DeviceHandle const&, nn::nfp::ModelType, nn::nfp::MountTarget)` | `ov_nfp_no_device` (runtime/ov_system.c) |
 | `nn::nfp::StartDetection(nn::nfp::DeviceHandle const&)` | `ov_nfp_no_device` (runtime/ov_system.c) |
 | `nn::nfp::StopDetection(nn::nfp::DeviceHandle const&)` | `ov_nfp_no_device` (runtime/ov_system.c) |
+| `nn::nifm::GetCurrentPrimaryIpAddress(in_addr*)` | `ov_nifm_address` (runtime/smo_ov_network.c) |
+| `nn::nifm::GetCurrentProxySetting(nn::nifm::ProxySetting*)` | `ov_nifm_address` (runtime/smo_ov_network.c) |
+| `nn::nifm::HandleNetworkRequestResult()` | `ov_nifm_handle` (runtime/smo_ov_network.c) |
+| `nn::nifm::Initialize()` | `ov_nifm_initialize` (runtime/smo_ov_network.c) |
+| `nn::nifm::IsNetworkAvailable()` | `ov_false` (runtime/smo_ov_network.c) |
+| `nn::nifm::IsNetworkRequestOnHold()` | `ov_false` (runtime/smo_ov_network.c) |
+| `nn::nifm::SubmitNetworkRequest()` | `ov_nifm_submit` (runtime/smo_ov_network.c) |
+| `nn::nifm::SubmitNetworkRequestAndWait()` | `ov_nifm_submit` (runtime/smo_ov_network.c) |
 | `nn::oe::FinishStartupLogo()` | `ov_finish_logo` (runtime/ov_system.c) |
 | `nn::oe::GetCurrentFocusState()` | `ov_focus_state` (runtime/ov_system.c) |
 | `nn::oe::GetDesiredLanguage()` | `ov_desired_language` (runtime/ov_system.c) |
@@ -158,10 +205,21 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::oe::SetResumeNotificationEnabled(bool)` | `ov_resume_enabled` (runtime/ov_system.c) |
 | `nn::oe::SetUserInactivityDetectionTimeExtended(bool)` | `ov_inactivity_extended` (runtime/ov_system.c) |
 | `nn::oe::TryPopNotificationMessage(unsigned int*)` | `ov_try_pop` (runtime/ov_system.c) |
+| `nn::pctl::ConfirmStereoVisionRestrictionConfigurable()` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::pctl::GetStereoVisionRestriction()` | `ov_false` (runtime/smo_ov_network.c) |
+| `nn::pctl::RequestStereoVisionRestrictionConfigurationPermission()` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::pctl::SetStereoVisionRestriction(bool)` | `ov_nothing` (runtime/smo_ov_network.c) |
 | `nn::pl::GetSharedFontAddress(nn::pl::SharedFontType)` | `ov_font_address` (runtime/ov_system.c) |
 | `nn::pl::GetSharedFontLoadState(nn::pl::SharedFontType)` | `ov_font_state` (runtime/ov_system.c) |
 | `nn::pl::GetSharedFontSize(nn::pl::SharedFontType)` | `ov_font_size` (runtime/ov_system.c) |
+| `nn::prepo::PlayReport::Add(char const*, double)` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::prepo::PlayReport::Add(char const*, long)` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::prepo::PlayReport::Add(char const*, nn::prepo::Any64BitId const&)` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::prepo::PlayReport::PlayReport(char const*)` | `ov_nothing` (runtime/smo_ov_network.c) |
 | `nn::prepo::PlayReport::Save(nn::account::Uid const&)` | `ov_report_save` (runtime/ov_system.c) |
+| `nn::prepo::PlayReport::SetBuffer(void*, unsigned long)` | `ov_ok` (runtime/smo_ov_network.c) |
+| `nn::settings::operator==(nn::settings::LanguageCode const&, nn::settings::Language const&)` | `ov_language_code_equal` (runtime/smo_ov_system.c) |
+| `nn::socket::Initialize(void*, unsigned long, unsigned long, int)` | `ov_socket_initialize` (runtime/smo_ov_network.c) |
 | `nn::swkbd::ShowKeyboard(nn::swkbd::String*, nn::swkbd::ShowKeyboardArg const&)` | `ov_show_keyboard` (runtime/swkbd.c) |
 | `nn::time::Finalize()` | `ov_time_finalize` (runtime/ov_system.c) |
 | `nn::time::Initialize()` | `ov_time_initialize` (runtime/ov_system.c) |
@@ -174,6 +232,8 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::vi::GetNativeWindow(void**, nn::vi::Layer*)` | `ov_native_window` (runtime/ov_gfx.c) |
 | `nn::vi::Initialize()` | `ov_vi_initialize` (runtime/ov_gfx.c) |
 | `nn::vi::OpenDefaultDisplay(nn::vi::Display**)` | `ov_open_display` (runtime/ov_gfx.c) |
+| `nnsslInitialize` | `ov_ssl_initialize` (runtime/smo_ov_network.c) |
+| `void nn::hid::GetTouchScreenState<1ul>(nn::hid::TouchScreenState<1ul>*)` | `ov_touch_state` (runtime/smo_ov_input.c) |
 
 ## Assinatura difere
 
@@ -190,11 +250,8 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::account::AsyncContext::~AsyncContext()`
 - `nn::account::EnsureNetworkServiceAccountAvailable(nn::account::UserHandle const&)`
 - `nn::account::EnsureNetworkServiceAccountIdTokenCacheAsync(nn::account::AsyncContext*, nn::account::UserHandle const&)`
-- `nn::account::GetLastOpenedUser(nn::account::Uid*)`
 - `nn::account::GetNetworkServiceAccountId(nn::account::NetworkServiceAccountId*, nn::account::UserHandle const&)`
-- `nn::account::IsNetworkServiceAccountAvailable(bool*, nn::account::UserHandle const&)`
 - `nn::account::LoadNetworkServiceAccountIdTokenCache(unsigned long*, char*, unsigned long, nn::account::UserHandle const&)`
-- `nn::account::OpenPreselectedUser(nn::account::UserHandle*)`
 - `nn::audio::AcquireAudioDeviceSwitchNotification(nn::os::SystemEvent*)`
 - `nn::audio::AcquireFinalMix(nn::audio::AudioRendererConfig*, nn::audio::FinalMixType*, int)`
 - `nn::audio::AcquireMemoryPool(nn::audio::AudioRendererConfig*, nn::audio::MemoryPoolType*, void*, unsigned long)`
@@ -314,10 +371,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::bcat::DeliveryCacheProgress::Update()`
 - `nn::bcat::DeliveryCacheProgress::~DeliveryCacheProgress()`
 - `nn::bcat::EnumerateDeliveryCacheDirectory(int*, nn::bcat::DirectoryName*, int)`
-- `nn::bcat::Initialize()`
-- `nn::bcat::MountDeliveryCacheStorage()`
-- `nn::bcat::RequestSyncDeliveryCache(nn::bcat::DeliveryCacheProgress*)`
-- `nn::bcat::UnmountDeliveryCacheStorage()`
 - `nn::crypto::GenerateSha1Hash(void*, unsigned long, void const*, unsigned long)`
 - `nn::crypto::detail::Md5Impl::GetHash(void*, unsigned long)`
 - `nn::crypto::detail::Md5Impl::Initialize()`
@@ -367,46 +420,14 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::friends::AsyncContext::GetSystemEvent(nn::os::SystemEvent*)`
 - `nn::friends::AsyncContext::~AsyncContext()`
 - `nn::friends::GetProfileList(nn::friends::AsyncContext*, nn::friends::Profile*, nn::account::NetworkServiceAccountId const*, int)`
-- `nn::friends::Initialize()`
 - `nn::friends::Profile::Profile()`
-- `nn::fs::CloseDirectory(nn::fs::DirectoryHandle)`
-- `nn::fs::CloseFile(nn::fs::FileHandle)`
-- `nn::fs::CommitSaveData(char const*)`
-- `nn::fs::CreateDirectory(char const*)`
-- `nn::fs::CreateFile(char const*, long)`
-- `nn::fs::DeleteFile(char const*)`
-- `nn::fs::EnsureSaveData(nn::account::Uid const&)`
-- `nn::fs::FlushFile(nn::fs::FileHandle)`
-- `nn::fs::GetEntryType(nn::fs::DirectoryEntryType*, char const*)`
-- `nn::fs::GetFileSize(long*, nn::fs::FileHandle)`
-- `nn::fs::MountSaveData(char const*, nn::account::Uid const&)`
-- `nn::fs::OpenDirectory(nn::fs::DirectoryHandle*, char const*, int)`
-- `nn::fs::OpenFile(nn::fs::FileHandle*, char const*, int)`
-- `nn::fs::ReadDirectory(long*, nn::fs::DirectoryEntry*, nn::fs::DirectoryHandle, long)`
-- `nn::fs::ReadFile(unsigned long*, nn::fs::FileHandle, long, void*, unsigned long)`
-- `nn::fs::ReadFile(unsigned long*, nn::fs::FileHandle, long, void*, unsigned long, nn::fs::ReadOption const&)`
-- `nn::fs::SetFileSize(nn::fs::FileHandle, long)`
-- `nn::fs::Unmount(char const*)`
-- `nn::fs::WriteFile(nn::fs::FileHandle, long, void const*, unsigned long, nn::fs::WriteOption const&)`
-- `nn::hid::FinalizeSevenSixAxisSensor()`
-- `nn::hid::GetDebugPadState(nn::hid::DebugPadState*)`
-- `nn::hid::GetSevenSixAxisSensorStates(nn::hid::SevenSixAxisSensorState*, int)`
 - `nn::hid::GetSixAxisSensorHandles(nn::hid::SixAxisSensorHandle*, int, unsigned int const&, nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)`
 - `nn::hid::GetSixAxisSensorStates(nn::hid::SixAxisSensorState*, int, nn::hid::SixAxisSensorHandle const&)`
 - `nn::hid::GetVibrationDeviceHandles(nn::hid::VibrationDeviceHandle*, int, unsigned int const&, nn::util::BitFlagSet<32, nn::hid::NpadStyleTag>)`
-- `nn::hid::InitializeDebugPad()`
-- `nn::hid::InitializeSevenSixAxisSensor(void*, unsigned long)`
-- `nn::hid::InitializeTouchScreen()`
 - `nn::hid::InitializeVibrationDevice(nn::hid::VibrationDeviceHandle const&)`
-- `nn::hid::IsSevenSixAxisSensorAtRest()`
 - `nn::hid::IsVibrationDeviceMounted(nn::hid::VibrationDeviceHandle const&)`
-- `nn::hid::MergeSingleJoyAsDualJoy(unsigned int const&, unsigned int const&)`
-- `nn::hid::ResetSevenSixAxisSensorTimestamp()`
 - `nn::hid::SendVibrationValue(nn::hid::VibrationDeviceHandle const&, nn::hid::VibrationValue const&)`
-- `nn::hid::SetNpadJoyAssignmentModeDual(unsigned int const&)`
-- `nn::hid::StartSevenSixAxisSensor()`
 - `nn::hid::StartSixAxisSensor(nn::hid::SixAxisSensorHandle const&)`
-- `nn::hid::StopSevenSixAxisSensor()`
 - `nn::hid::VibrationMixer::SetMixMode(nn::hid::VibrationMixMode)`
 - `nn::hid::VibrationMixer::VibrationMixer()`
 - `nn::hid::VibrationNode::SetModulationTo(nn::hid::VibrationNode const*, nn::hid::VibrationModulation const&)`
@@ -447,14 +468,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::mem::StandardAllocator::StandardAllocator()`
 - `nn::mem::StandardAllocator::StandardAllocator(void*, unsigned long)`
 - `nn::nfp::Unmount(nn::nfp::DeviceHandle const&)`
-- `nn::nifm::GetCurrentPrimaryIpAddress(in_addr*)`
-- `nn::nifm::GetCurrentProxySetting(nn::nifm::ProxySetting*)`
-- `nn::nifm::HandleNetworkRequestResult()`
-- `nn::nifm::Initialize()`
-- `nn::nifm::IsNetworkAvailable()`
-- `nn::nifm::IsNetworkRequestOnHold()`
-- `nn::nifm::SubmitNetworkRequest()`
-- `nn::nifm::SubmitNetworkRequestAndWait()`
 - `nn::nsd::ResolveEx(nn::nsd::Fqdn*, nn::nsd::Fqdn const&)`
 - `nn::oe::BeginBlockingHomeButton()`
 - `nn::oe::DisableRecording()`
@@ -532,18 +545,8 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::os::WaitSystemEvent(nn::os::SystemEventType*)`
 - `nn::os::WaitThread(nn::os::ThreadType*)`
 - `nn::os::YieldThread()`
-- `nn::pctl::ConfirmStereoVisionRestrictionConfigurable()`
-- `nn::pctl::GetStereoVisionRestriction()`
-- `nn::pctl::RequestStereoVisionRestrictionConfigurationPermission()`
-- `nn::pctl::SetStereoVisionRestriction(bool)`
 - `nn::pl::BeginVrMode()`
 - `nn::pl::EndVrMode()`
-- `nn::prepo::PlayReport::Add(char const*, double)`
-- `nn::prepo::PlayReport::Add(char const*, long)`
-- `nn::prepo::PlayReport::Add(char const*, nn::prepo::Any64BitId const&)`
-- `nn::prepo::PlayReport::PlayReport(char const*)`
-- `nn::prepo::PlayReport::SetBuffer(void*, unsigned long)`
-- `nn::settings::operator==(nn::settings::LanguageCode const&, nn::settings::Language const&)`
 - `nn::sf::cmif::GetInlineContext()`
 - `nn::sf::hipc::CloseClientSessionHandle(nn::svc::Handle)`
 - `nn::sf::hipc::ConnectToHipcService(nn::svc::Handle*, char const*)`
@@ -572,7 +575,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::socket::InetNtohs(unsigned short)`
 - `nn::socket::InetNtop(int, void const*, char*, unsigned int)`
 - `nn::socket::InetPton(int, char const*, void*)`
-- `nn::socket::Initialize(void*, unsigned long, unsigned long, int)`
 - `nn::socket::Listen(int, int)`
 - `nn::socket::Poll(pollfd*, unsigned long, int)`
 - `nn::socket::Recv(int, void*, unsigned long, int)`
@@ -684,8 +686,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nnsslConnectionWrite`
 - `nnsslContextDestroy`
 - `nnsslContextGetContextId`
-- `nnsslInitialize`
-- `void nn::hid::GetTouchScreenState<1ul>(nn::hid::TouchScreenState<1ul>*)`
 
 ## Overrides sem referência no SMO
 

@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT / 'recomp'))
 from nso import Nso  # noqa: E402
 
 EXEFS = ROOT / 'build' / 'extracted' / 'smo-v141' / 'exefs'
-OVERRIDE = re.compile(r'HOST_OVERRIDE\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
+OVERRIDE = re.compile(r'HOST_OVERRIDE\(\s*("[^"]+"|\w+)\s*,\s*(\w+)\s*\)')
+DEFINE = re.compile(r'^#define\s+(\w+)\s+"([^"]+)"', re.M)
 
 
 def demangle(names):
@@ -42,8 +43,12 @@ def qualified(demangled):
 def main():
     overrides = {}
     for path in sorted((ROOT / 'runtime').rglob('*.c*')):
-        for sym, fn in OVERRIDE.findall(path.read_text(encoding='utf-8', errors='replace')):
-            overrides[sym] = (fn, path.relative_to(ROOT).as_posix())
+        text = path.read_text(encoding='utf-8', errors='replace')
+        macros = dict(DEFINE.findall(text))   # fs_host.c names its symbols through #define S_...
+        for sym, fn in OVERRIDE.findall(text):
+            sym = sym.strip('"') if sym.startswith('"') else macros.get(sym)
+            if sym:
+                overrides[sym] = (fn, path.relative_to(ROOT).as_posix())
     imports = defaultdict(set)
     for name in ('main', 'subsdk0', 'sdk'):
         for sym, *_ in Nso(EXEFS / name).imports():

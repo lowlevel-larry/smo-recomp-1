@@ -29,9 +29,16 @@ void nvnp_nvnDeviceGetProcAddress(Cpu *c);
 
 typedef struct { const char *name; uint64_t addr; } Proc;
 
+// NVN 53 procs that only SMO loads (smo_nvn.c), registered for SMO builds only.
+#define NVN_PROCS_SMO(X) X(nvnQueueAcquireTexture) X(nvnDeviceApplyDeferredFinalizes)
+#define NVN_PROC(n) void nvnp_##n(Cpu *c);
+NVN_PROCS_SMO(NVN_PROC)
+#undef NVN_PROC
+
 #define NVN_PROC(n) +1
 enum { PROC_COUNT = 0
 #include "nvn_procs.inc"
+NVN_PROCS_SMO(NVN_PROC)
 };
 #undef NVN_PROC
 
@@ -44,6 +51,9 @@ void nvn_procs_register(void) {
     if (nprocs) return;
 #define NVN_PROC(n) procs[nprocs++] = (Proc){#n, hostfn_register("nvn:" #n, nvnp_##n)};
 #include "nvn_procs.inc"
+#undef NVN_PROC
+#define NVN_PROC(n) procs[nprocs++] = (Proc){#n, hostfn_register("nvn:" #n, nvnp_##n)};
+    if (RT_SMO) { NVN_PROCS_SMO(NVN_PROC) }
 #undef NVN_PROC
     qsort(procs, (size_t)nprocs, sizeof *procs, by_name);
 }

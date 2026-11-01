@@ -204,6 +204,8 @@ NVN_API(nvnDeviceGetInteger) {
     int *out = arg_p(c, 2);
     if (w >= sizeof devinfo / sizeof *devinfo) rt_fatal("nvn: unsupported NVN device property %#x", w);
     *out = devinfo[w];
+    // SMO links NVN 53 (SDK 7.3.2): its device bring-up (main+0x9414c0) requires major 53 and minor >= 311
+    if (RT_SMO && w <= NVN_DEVICE_INFO_API_MINOR_VERSION) *out = w == NVN_DEVICE_INFO_API_MAJOR_VERSION ? 53 : 311;
     NVN_LOG("DeviceGetInteger %#x -> %d", w, *out);
 }
 // NVNboolean nvnDeviceRegisterFastClearColor{,i,ui}(NVNdevice *d, const T *color, NVNformat format), ...Depth(d, float):
