@@ -19,11 +19,11 @@
 //
 // Conditional rendering is a CPU-side skip, not VK_EXT_conditional_rendering: the extension compares one 32-bit word
 // with zero, NVN compares the counter words at addr and addr + 16. The condition is evaluated when the op is recorded
-// from guest memory; a counter reported by an earlier submission that is not done yet counts as 0 if it is a timestamp,
-// as unknown if it is samples passed. An unknown count renders: the report usually sits in the command buffer being
-// recorded, so its value cannot be waited for, and the word in memory still holds an older query's count. Rendering
-// costs at most the work the condition would have saved (MacNativeGames nvn_mtl.m decides the same); in the field
-// TOTK conditions only on timestamp reports. The condition sets VkExec.render_disabled, which vk_exec.c honours for
+// from guest memory; a counter reported by an earlier submission that is not done yet counts as 0 if it is a timestamp.
+// A samples-passed report not done yet usually sits in the command buffer being recorded, so its value cannot be waited
+// for: the condition uses the count the same report left in memory a frame earlier (cond_enabled), one frame late, as
+// emulators with asynchronous queries do. TotK conditions only on timestamp reports; Super Mario Odyssey conditions its
+// light and moon glares on samples passed. The condition sets VkExec.render_disabled, which vk_exec.c honours for
 // clears and vk_exec_draw.c for draws and dispatches. A condition that cannot be read (address outside every pool)
 // renders.
 // Copies and CLEAR_TEX are not conditional (as in MacNativeGames, nvn_mtl.m).
@@ -194,6 +194,8 @@ void vk_exec_oq_draw(VkExec *ex) {
 
 void vk_exec_oq_pass_end(VkExec *ex) { oq_close(ex); }
 
+int vk_exec_oq_counting(void) { return oq_counting; }
+
 void vk_exec_xfer_shutdown(void) {
     if (oq_state > 0) vkDestroyQueryPool(vk_ctx()->device, oq_pool, NULL);
     oq_pool = VK_NULL_HANDLE, oq_state = 0, oq_next = 0, oq_counting = oq_reported = oq_keep = 0, oq_open = -1;
@@ -232,6 +234,11 @@ static void oq_cb(void *arg) {
         oq_count += sum;
         if (s->lost && !oq_count) oq_count = 1;
         if (s->addr) write_counter(s->addr, oq_count);
+        static int logged;   // TOTK_TRACE=gfx: the first reports' counts, to follow one report address over frames
+        if (s->addr && (rt_trace & RT_TRACE_GFX) && logged < 200000)
+            logged++, rt_log("vk: samples passed f%llu %#llx = %llu (%u queries%s)",
+                             (unsigned long long)__atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED),
+                             (unsigned long long)s->addr, (unsigned long long)oq_count, s->n, s->lost ? ", lost" : "");
     }
     free(s);
 }
@@ -294,18 +301,37 @@ static void report_counter(VkExec *ex, const p_report_counter *p) {
 
 // ---- conditional rendering
 
-// 1: *v read, 0: not readable, 2: a samples-passed report not done yet (unknown)
-static int counter_word(uint64_t addr, uint64_t *v) {
-    uint64_t done = vk_sync_fence_done();
-    for (unsigned k = 1; k <= PENDING; k++) {   // newest first: the last report to addr decides
-        unsigned i = (pending_head - k) % PENDING;
-        if (pending[i].addr == addr && pending[i].fence > done) return *v = 0, pending[i].unknown ? 2 : 1;
-    }
+static int counter_memory(uint64_t addr, uint64_t *v) {
     VkMemSpan m;
     if (nvn_gpu_only(addr) || !vk_mem_resolve(addr, sizeof *v, &m)) return 0;
     memcpy(v, (const void *)(uintptr_t)addr, sizeof *v);
     vk_mem_count(m.cls, VK_MUSE_CPU_READ, sizeof *v);
     return 1;
+}
+
+// 1: *v read, 0: not readable, 2: a samples-passed report not done yet, *v the count an earlier report left in memory
+// (3: and that memory is not readable either)
+static int counter_word(uint64_t addr, uint64_t *v) {
+    uint64_t done = vk_sync_fence_done();
+    for (unsigned k = 1; k <= PENDING; k++) {   // newest first: the last report to addr decides
+        unsigned i = (pending_head - k) % PENDING;
+        if (pending[i].addr == addr && pending[i].fence > done) {
+            if (!pending[i].unknown) return *v = 0, 1;
+            return counter_memory(addr, v) ? 2 : (*v = 0, 3);
+        }
+    }
+    return counter_memory(addr, v);
+}
+
+// TOTK_TRACE=gfx: what the conditions decided, one line per 2000.
+static void cond_note(int kind) {   // 0 rendered (unknown count, unreadable), 1 rendered (by count), 2 skipped
+    static uint32_t n[3];
+    if (!(rt_trace & RT_TRACE_GFX)) return;
+    n[kind]++;
+    if (n[0] + n[1] + n[2] < 2000) return;
+    rt_log("vk: conditional rendering: %u rendered on an unknown samples-passed count, %u rendered and %u skipped by "
+           "the count", n[0], n[1], n[2]);
+    n[0] = n[1] = n[2] = 0;
 }
 
 static int cond_enabled(const p_render_cond *c) {
@@ -315,8 +341,14 @@ static int cond_enabled(const p_render_cond *c) {
         warn_once(W_BUFFER, "conditional render counters at %#llx are not readable: rendering", (unsigned long long)c->addr);
         return 1;
     }
-    if (rx == 2 || ry == 2) return 1;   // a samples-passed count not done yet
-    return c->mode == 0 ? x == y : x != y;
+    // A samples-passed count not done yet decides with the count its report left in memory one frame earlier, as
+    // games test the same object every frame (Super Mario Odyssey's lamp and moon glares test their occlusion right
+    // before the conditional draw, in the same command buffer). Rendering whenever the count was unknown drew every
+    // glare all the time, also behind walls, and the game's own reads of the counts made them flash and vanish.
+    if (rx == 3 || ry == 3) return cond_note(0), 1;
+    int on = c->mode == 0 ? x == y : x != y;
+    cond_note(on ? 1 : 2);
+    return on;
 }
 
 // ---- textures

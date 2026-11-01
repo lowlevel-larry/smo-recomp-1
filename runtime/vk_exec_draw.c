@@ -39,7 +39,7 @@
 #define NVN_STAGE_CS 5
 #define ONESHOT_WAIT_MS 30000u   // prepare_draw: how long a one-shot draw waits for its pipeline before it is skipped
 
-enum { W_PROGRAM, W_SHADER, W_PIPELINE, W_NO_VS, W_INDEX, W_UB, W_BIND, W_SSBO_ALIGN, W_SSBO_SLOT, W_RESTART, W_INDIRECT, W_COUNT };
+enum { W_PROGRAM, W_SHADER, W_PIPELINE, W_NO_VS, W_INDEX, W_UB, W_BIND, W_SSBO_ALIGN, W_SSBO_SLOT, W_RESTART, W_INDIRECT, W_LOCAL, W_COUNT };
 
 static void warn_once(int key, const char *fmt, ...) {
     static volatile int32_t seen[W_COUNT];
@@ -1999,6 +1999,23 @@ static int pipe_memo_on(void) {
 }
 
 // Pass, shaders, pipeline, fixed state and resources for a draw. 0: the draw is skipped.
+// TOTK_CRUMBS_OPS: names the draw the last op crumb marks, with the image behind the fragment shader's first texture,
+// so a hang report tells a bad texture descriptor apart from a bad shader.
+static void crumb_draw(VkExec *ex, const GfxShader *vs, const GfxShader *fs, int prim, int32_t count) {
+    VkCrumbTex t = {0};
+    const GfxShaderRes *res;
+    if (fs && gfx_shader_resources(fs, GFX_RES_TEX, &res) > 0 && res[0].slot >= 0 && res[0].slot < 128) {
+        uint64_t h = ex->tex[NVN_STAGE_FS][res[0].slot];
+        t.handle = h, t.type = res[0].type;
+        vk_texture_lock();
+        const VkTexImage *img = h ? vk_texture_by_id_locked((int)(h & 0xfffff), NULL, NULL) : NULL;
+        if (img) t.format = img->format, t.w = img->width, t.h = img->height, t.layers = img->layers,
+                 t.levels = img->levels, t.addr = img->addr, t.found = 1;
+        vk_texture_unlock();
+    }
+    vk_crumb_op_draw(gfx_shader_key(vs), fs ? gfx_shader_key(fs) : NULL, prim, count, &t);
+}
+
 static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
     if (ex->render_disabled) return 0;
     cb_res(ex);
@@ -2044,6 +2061,28 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
         if (fs_wait) fs = shader_for(ex, NVN_STAGE_FS, &has_fs, NULL, 1);
     }
     if (!vs || (has_fs && !fs)) return 0;
+    if (vk_crumbs_ops_on()) crumb_draw(ex, vs, fs, prim, count);
+    if ((rt_trace & RT_TRACE_GFX) && vk_exec_oq_counting()) {   // the draws an occlusion count is made of, once each
+        static uint64_t seen[256];
+        static int nseen;
+        uint64_t k = 0;
+        memcpy(&k, gfx_shader_key(vs), 4);
+        if (fs) memcpy((uint8_t *)&k + 4, gfx_shader_key(fs), 4);
+        int known = 0;
+        for (int i = 0; i < nseen; i++) known |= seen[i] == k;
+        if (!known && nseen < 256) {
+            seen[nseen++] = k;
+            const uint8_t *a = gfx_shader_key(vs), *b = fs ? gfx_shader_key(fs) : a;
+            const GfxShaderRes *res;
+            int ntex = fs ? gfx_shader_resources(fs, GFX_RES_TEX, &res) : 0;
+            rt_log("vk: counted draw vs %02x%02x%02x%02x fs %02x%02x%02x%02x%s: %d vertices, prim %d, depth test %d write %d "
+                   "func %d, depth format %#x, polygon offset %#x units %g factor %g clamp %g, %d fs textures, "
+                   "pass %ux%u", a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3], fs ? "" : " (no fs)", count, prim,
+                   (int)ex->pipe.ds.dt, (int)ex->pipe.ds.dw, (int)ex->pipe.ds.df, (unsigned)ex->pipe.depth_fmt,
+                   (unsigned)ex->pipe.poly.offset_en, ex->poly_offset.units, ex->poly_offset.factor, ex->poly_offset.clamp,
+                   ntex, ex->pass_w, ex->pass_h);
+        }
+    }
     uint32_t fbl = feedback_prepare(ex, fs);
     VkPipeState s = ex->pipe;
     s.vs = vs, s.fs = fs;
@@ -2244,6 +2283,23 @@ static void op_draw_idx_ind(VkExec *ex, const p_draw_idx_ind *d) {
 
 // ---- dispatch and uniform buffer updates
 
+// Maxwell runs up to 1536 invocations per work group (SMO has such compute shaders); Vulkan devices allow
+// maxComputeWorkGroupInvocations (1024 on RADV and lavapipe). A dispatch over the limit is undefined behaviour and hung
+// RADV hard enough to need a full GPU reset, so it is skipped: wrong results, never a lost device.
+static int local_size_fits(const GfxShader *cs) {
+    const VkPhysicalDeviceLimits *l = &vk_ctx()->props.limits;
+    uint32_t a[3];
+    gfx_shader_local_size(cs, a);
+    if (a[0] <= l->maxComputeWorkGroupSize[0] && a[1] <= l->maxComputeWorkGroupSize[1] &&
+        a[2] <= l->maxComputeWorkGroupSize[2] && (uint64_t)a[0] * a[1] * a[2] <= l->maxComputeWorkGroupInvocations)
+        return 1;
+    const uint8_t *k = gfx_shader_key(cs);
+    warn_once(W_LOCAL, "a compute shader (key %02x%02x%02x%02x) has work groups of %ux%ux%u, over the device's %u "
+              "invocations: dispatches with it are skipped", k[0], k[1], k[2], k[3], a[0], a[1], a[2],
+              l->maxComputeWorkGroupInvocations);
+    return 0;
+}
+
 static void op_dispatch(VkExec *ex, const p_dispatch *d) {
     if (d->x <= 0 || d->y <= 0 || d->z <= 0) return;
     if (!ex->prog) return warn_once(W_PROGRAM, "a dispatch without a bound program is skipped");
@@ -2251,7 +2307,7 @@ static void op_dispatch(VkExec *ex, const p_dispatch *d) {
     dummies_init();
     int present;
     const GfxShader *cs = shader_for(ex, NVN_STAGE_CS, &present, NULL, 0);   // synchronous: a skipped dispatch changes results
-    if (!cs) return;
+    if (!cs || !local_size_fits(cs)) return;
     const VkPipeInfo *info = NULL;
     VkPipeline p = vk_pipeline_compute(cs, &info);
     if (!p || !info) return warn_once(W_PIPELINE, "a compute pipeline could not be created: dispatches with it are skipped");
@@ -2277,7 +2333,7 @@ static void op_dispatch_ind(VkExec *ex, const p_dispatch_ind *d) {
     dummies_init();
     int present;
     const GfxShader *cs = shader_for(ex, NVN_STAGE_CS, &present, NULL, 0);
-    if (!cs) return;
+    if (!cs || !local_size_fits(cs)) return;
     const VkPipeInfo *info = NULL;
     VkPipeline p = vk_pipeline_compute(cs, &info);
     if (!p || !info) return warn_once(W_PIPELINE, "a compute pipeline could not be created: dispatches with it are skipped");

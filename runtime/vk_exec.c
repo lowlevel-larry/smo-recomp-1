@@ -570,6 +570,7 @@ void vk_exec_barrier(VkExec *ex) { barrier_to(ex, NULL, NULL, 0); }
 
 void vk_exec_pass_begin(VkExec *ex) {
     if (ex->in_pass) return;
+    vk_crumb_pass_begin(ex->cb);
     resolve_rt(ex);
     // Learned targets (VkTexImage.fb_learned) are attached in the feedback layout
     VkImage want[9];
@@ -622,6 +623,7 @@ void vk_exec_pass_end(VkExec *ex) {
     vkCmdEndRendering(ex->cb);
     ex->recorded++;
     ex->in_pass = 0;
+    vk_crumb_pass_end(ex->cb);
     for (int i = 0; i < ex->pass_ncolor && i < 8; i++)   // stand-ins of 3D BC targets go to their textures
         if (ex->color[i].image && ex->color[i].img && ex->color[i].img->image != ex->color[i].image)
             bc_copy_back(ex, &ex->color[i]);
@@ -808,6 +810,10 @@ static void walk(VkExec *ex, const op_hdr *h, int depth) {
         if (h->size < sizeof *h || (h->size & 7) || h->op >= OP_COUNT_)
             rt_fatal("vk: corrupt command record at %p: op %u size %u", (const void *)h, h->op, h->size);
         const void *a = nvn_op_payload(h);
+        if (vk_crumbs_ops_on()) switch (h->op) {   // every op that may record GPU commands, state binds included
+            case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: break;
+            default: vk_crumb_op(ex->cb, h->op, ex->prog ? ex->prog->serial : 0);
+            }
         switch (h->op) {
         case OP_END: return;
         case OP_BEGIN: break;

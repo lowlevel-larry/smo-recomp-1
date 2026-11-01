@@ -77,12 +77,21 @@ void vk_device_fault_report(VkResult r);
 // twice, when the command processor reaches it and when all work before it has finished. After a lost device the two
 // codes bracket the work that hung. Without the extension every call returns at once.
 enum { VK_CRUMB_SUBMIT = 1, VK_CRUMB_SUBMIT_END, VK_CRUMB_UPLOAD, VK_CRUMB_UPLOAD_END, VK_CRUMB_ASTC, VK_CRUMB_PRESENT,
-       VK_CRUMB_PRESENT_END };
+       VK_CRUMB_PRESENT_END, VK_CRUMB_OP, VK_CRUMB_PRESENT_STEP };
 void vk_crumbs_init(VkCtx *c);       // after the allocator exists
 void vk_crumbs_release(void);
 // Records crumb kind with number n (a timeline value, a batch number; the low 28 bits are kept) into cb. Only the
 // thread that records cb may call it: never into a replay part while the recorder thread owns it (vk_rec.h).
 void vk_crumb(VkCommandBuffer cb, int kind, uint64_t n);
+// TOTK_CRUMBS_OPS=1: a crumb before every draw, dispatch and copy of the replay (op: its nvn op, prog: the bound
+// program's serial), so a lost device names the command that hung. Drains the recorder first: slow, diagnosis only.
+int vk_crumbs_ops_on(void);
+void vk_crumb_op(VkCommandBuffer cb, int op, uint64_t prog);
+typedef struct { uint64_t handle, addr; uint32_t format, w, h, layers, levels; uint16_t type; uint8_t found; } VkCrumbTex;
+void vk_crumb_op_draw(const uint8_t *vs_key, const uint8_t *fs_key, int prim, int32_t count,
+                      const VkCrumbTex *tex);   // the last op's shaders and the fragment shader's first texture
+void vk_crumb_pass_begin(VkCommandBuffer cb); // TOTK_CRUMBS_OPS: an op crumb before a render pass begins
+void vk_crumb_pass_end(VkCommandBuffer cb);   // TOTK_CRUMBS_OPS: an op crumb after a render pass ended
 void vk_crumbs_report(void);         // logs the two codes and what they name
 
 // ---- window and present (gfx_present.c). Host threads only.
