@@ -49,6 +49,7 @@ void vk_queue_unlock(void);
 void res_sizes(unsigned out[2], unsigned scene[2]);
 double frame_step_limit_hz(void);
 extern const int rt_game_version;
+extern const int rt_game_smo;
 // fs.h (romfs.c): romfs-patches-xbox was next to romfs-index.bin at start, and was loaded.
 int romfs_xbox_prompts_ready(void);
 int romfs_xbox_prompts_active(void);
@@ -193,7 +194,40 @@ static float menu_scale(uint32_t h) {
     return ((float)h >= least ? (float)h : least) / 1080.0f;
 }
 
-// SavageWindRecomp's colours: dark green panels, gold accents.
+// Super Mario Odyssey's colours: navy panels as in its pause menu, Mario red for what is selected, the logo's gold.
+static void style_smo(ImVec4 *c) {
+    ImVec4 gold(1.00f, 0.80f, 0.16f, 1), red(0.80f, 0.09f, 0.13f, 1);
+    c[ImGuiCol_WindowBg] = ImVec4(0.04f, 0.06f, 0.15f, 0.95f);
+    c[ImGuiCol_Text] = ImVec4(0.98f, 0.97f, 0.94f, 1);
+    c[ImGuiCol_TextDisabled] = ImVec4(0.62f, 0.66f, 0.80f, 1);
+    c[ImGuiCol_Button] = ImVec4(0.10f, 0.15f, 0.34f, 1);
+    c[ImGuiCol_ButtonHovered] = ImVec4(0.62f, 0.08f, 0.12f, 1);
+    c[ImGuiCol_ButtonActive] = red;
+    c[ImGuiCol_FrameBg] = ImVec4(0.08f, 0.12f, 0.28f, 1);
+    c[ImGuiCol_FrameBgHovered] = ImVec4(0.14f, 0.20f, 0.42f, 1);
+    c[ImGuiCol_FrameBgActive] = ImVec4(0.18f, 0.26f, 0.52f, 1);
+    c[ImGuiCol_Header] = ImVec4(0.10f, 0.15f, 0.34f, 1);
+    c[ImGuiCol_HeaderHovered] = ImVec4(0.62f, 0.08f, 0.12f, 1);
+    c[ImGuiCol_HeaderActive] = red;
+    c[ImGuiCol_SliderGrab] = gold;
+    c[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.90f, 0.45f, 1);
+    c[ImGuiCol_CheckMark] = gold;
+    c[ImGuiCol_Tab] = ImVec4(0.08f, 0.12f, 0.28f, 1);
+    c[ImGuiCol_TabHovered] = ImVec4(0.62f, 0.08f, 0.12f, 1);
+    c[ImGuiCol_TabSelected] = red;
+    c[ImGuiCol_TabSelectedOverline] = gold;
+    c[ImGuiCol_NavCursor] = gold;
+    c[ImGuiCol_Separator] = ImVec4(0.22f, 0.28f, 0.50f, 1);
+    c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0.2f);
+    c[ImGuiCol_ScrollbarGrab] = ImVec4(0.22f, 0.28f, 0.50f, 1);
+    c[ImGuiCol_ScrollbarGrabHovered] = red;
+    c[ImGuiCol_ScrollbarGrabActive] = gold;
+}
+
+// The title's colour: the gold accent of the theme style_init picks.
+static ImVec4 accent(void) { return rt_game_smo ? ImVec4(1.00f, 0.80f, 0.16f, 1) : ImVec4(0.93f, 0.76f, 0.33f, 1); }
+
+// SavageWindRecomp's colours: dark green panels, gold accents; SMO has its own (style_smo).
 static void style_init(ImGuiStyle &s) {
     ImGui::StyleColorsDark(&s);
     s.WindowRounding = 14; s.FrameRounding = 8; s.GrabRounding = 8; s.TabRounding = 8; s.ChildRounding = 10;
@@ -214,6 +248,7 @@ static void style_init(ImGuiStyle &s) {
     c[ImGuiCol_TabSelectedOverline] = gold;
     c[ImGuiCol_NavCursor] = gold;
     c[ImGuiCol_Separator] = ImVec4(0.30f, 0.36f, 0.30f, 1);
+    if (rt_game_smo) style_smo(c);
 }
 
 static void make_context(void) {
@@ -864,11 +899,17 @@ static void layout_menu(uint32_t w, uint32_t h, float scale) {
     ImGui::SetNextWindowSize(ImVec2(ww, wh), ImGuiCond_Always);
     ImGui::Begin("##menu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                         ImGuiWindowFlags_NoSavedSettings);
-    ImGui::TextColored(ImVec4(0.93f, 0.76f, 0.33f, 1), "%s", menu_text(UI_MENU_TITLE));
+    if (rt_game_smo) {   // the game's name above the page title, larger, in the theme's red
+        ImGui::SetWindowFontScale(1.4f);
+        ImGui::TextColored(ImVec4(0.93f, 0.16f, 0.20f, 1), "Super Mario Odyssey");
+        ImGui::SetWindowFontScale(1);
+    }
+    ImGui::TextColored(accent(), "%s", menu_text(UI_MENU_TITLE));
     // the port version and the game update, right-aligned on the title line: what a bug report needs first
     char game[16], version[96];
     snprintf(game, sizeof game, "%d.%d.%d", rt_game_version / 100, rt_game_version / 10 % 10, rt_game_version % 10);
-    snprintf(version, sizeof version, menu_text(UI_MENU_VERSION), rt_port_version, game);
+    snprintf(version, sizeof version, menu_text(UI_MENU_VERSION), rt_game_smo ? "SMO Recomp" : "TotK Recomp",
+             rt_port_version, game);
     ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - ImGui::CalcTextSize(version).x);
     ImGui::TextDisabled("%s", version);
 

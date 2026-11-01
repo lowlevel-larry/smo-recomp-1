@@ -53,7 +53,33 @@ Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/sm
   primeira execução ("Start / Start in Assist Mode") corretamente no alvo interno 1600x900 rgb10a2.
 
 ## Onde parou
-Rodar: `TOTK_SHARED_FONTS=$PWD/build/substitute-fonts build/smo-v141/totk`
+Rodar: `tools/run_safe.sh` (lavapipe, não trava a GPU) ou `tools/run_safe.sh --gpu`; binário é `build/smo-v141/smo`.
+GPU travando derruba o Hyprland: rode o Claude com `claude-safe` (tmux fora do Hyprland).
+**Travamento na GPU real (RADV Renoir, Mesa 26.2), 2026-11-01 — contornado:** `ring gfx timeout` com o gravador
+assíncrono de comandos (`vk_rec.c`) ligado: com overlay `full` travava de 5 s a 1,5 min; com `TOTK_VK_RECORDER=0` 12 min
+limpos a 60 fps (o gravador não ganha nada aqui). SMO agora tem o gravador desligado por padrão (`vk_rec.c rec_begin`).
+A causa dentro do gravador não foi achada: todo `vkCmd*` passa pelos wrappers `rc_*`/`rec_*`, então não é gravação direta;
+o suspeito é tempo de vida de objeto reciclado antes de o gravador gravar o comando (como as issues #5/#40).
+Diagnóstico: `TOTK_CRUMBS_OPS=1` (marcador antes de cada op NVN, início/fim de passe e etapas do present; `vk_crumbs.c`).
+Autoplay sem jogador: `TOTK_INPUT_SCRIPT=build/smo-v141/autoplay.txt`. Depois de resets da GPU o `gpu_busy_percent`
+trava em 99 e o sclk em 1900 MHz mesmo sem jogo: reiniciar o PC.
+**Áudio ruidoso — corrigido:** clique a cada emenda de 5 ms (aspereza 1,7× na fronteira do bloco de 240 amostras,
+medida gravando o monitor do PipeWire). `audren.c advance_voice` contava as amostras consumidas por uma multiplicação e
+`audio_mixer.c voice_render` por soma passo a passo: vozes não-48 kHz começavam o bloco seguinte uma amostra fora.
+Agora as duas contam igual (1,2×, nível do ruído). Também entraram as rampas de volume da voz e do mix
+(`accumulate_ramp`), como o DSP faz.
+**Reverb granulado (também nas cavernas do TotK) — corrigido:** as linhas de atraso dos dois reverbs (`audio_effects.c`
+`line_*`, `audio_reverb.c delay_*`), herdadas do Ryujinx, davam a volta num tamanho e liam as reflexões com outro: cada
+reflexão lia uma casa nunca escrita uma vez por volta. Senoide de 220 Hz: falhas de 1 amostra por segundo 56,7 → 0
+(I3DL2) e 234 → 0 (padrão).
+**Pipocadas em pulos e vozes — corrigido:** o SMO roda 5 efeitos AUX (tipo 2: o atk processa na CPU e devolve por
+um anel de retorno; o TotK usa os efeitos nativos). O render, ditado pelo dispositivo (PipeWire pede 1024 amostras de uma
+vez), fazia 4–5 blocos em rajada, e o jogo não preenchia o retorno a tempo: líamos amostras velhas, um estalo por emenda
+(20–30/s em cena cheia, medido com `TOTK_AUDIO_DUMP`). Agora os blocos saem com pelo menos 4 ms entre si
+(`audren.c render_thread`): 1,9/s, o jogador não ouve mais. Também entraram: prefill de 60 ms no SMO (o stream tinha
+xruns com 20 ms), o depop do DSP e `TOTK_AUDIO_DUMP=<arquivo>` (mix float32 antes do clamp).
+**Aberto:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
+**Acima de 60 fps:** não suportado no SMO (sem tabela de patches de frame rate; o ritmo segue o vsync de 60 Hz).
 Dump de frame: `TOTK_DUMP=1500 TOTK_DUMP_DIR=$PWD/build/smo-v141/dump` (pass_0000 = menu correto; pass_0001 = preto).
 **Bug atual:** o último passe (cópia rgb10a2 → rgba8srgb 0x144800000, 1 draw, vs 0744b810fbe3e242 / fs 3444fa67f4a6dd2e)
 sai todo zero (alfa também). O fs só amostra a textura certa (tex 282 = alvo do pass 0). O vs calcula a posição com
