@@ -45,18 +45,28 @@ Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/sm
   `smo_ov_input.c` (hid direto ao serviço), `smo_ov_network.c` (offline: friends, nifm, bcat, pctl VR, prepo, socket, ssl).
   Saves em `build/profile-smo-v141/save/`.
 
+- [x] Fontes sem firmware: o `nn::fontll` do SDK 7 quer o sfnt decodificado (runtime decodifica o BFTTF para o SMO);
+  `tools/smo_substitute_fonts.py` gera 6 fontes livres distintas (Noto/Liberation) em `build/substitute-fonts`.
+- [x] `GetPerformanceConfiguration`; `OpenDirectory` na RomFS (`romfs_list`, upstreamable).
+- [x] `runtime/smo_*.c` só entra em build `smo-v*` (build_game.py); build TotK do runtime conferida sem eles.
+- [x] **Roda a 60 fps estáveis** (3 min sem crash), áudio aberto, janela 1920x1080. O jogo renderiza o menu de
+  primeira execução ("Start / Start in Assist Mode") corretamente no alvo interno 1600x900 rgb10a2.
+
 ## Onde parou
-`TOTK_SHARED_FONTS=$PWD/build/substitute-fonts build/smo-v141/totk --seconds 10 --shot build/smo-v141/shot.png`
-→ carrega as fontes compartilhadas e cai em `main+0x8dea04` (lookup de glifo devolve NULL na lib de fonte). Provável
-glifo que só existe na fonte real (ícones de botão da "nintendo-extension"). As fontes substitutas (Noto,
-`tools/smo_substitute_fonts.py`) são só para desenvolvimento.
+Rodar: `TOTK_SHARED_FONTS=$PWD/build/substitute-fonts build/smo-v141/totk`
+Dump de frame: `TOTK_DUMP=1500 TOTK_DUMP_DIR=$PWD/build/smo-v141/dump` (pass_0000 = menu correto; pass_0001 = preto).
+**Bug atual:** o último passe (cópia rgb10a2 → rgba8srgb 0x144800000, 1 draw, vs 0744b810fbe3e242 / fs 3444fa67f4a6dd2e)
+sai todo zero (alfa também). O fs só amostra a textura certa (tex 282 = alvo do pass 0). O vs calcula a posição com
+uma **matriz de um uniform buffer do jogo** × atributo 0: se o cbuf chega zerado, os 3 vértices colapsam e nada é
+desenhado. `TOTK_PIPE_SKIP=none` não muda. Próximo: despejar o cbuf/vertex buffer desse draw (gdb em
+`nvnp_nvnCommandBufferBindUniformBuffer`/`BindVertexBuffer`, ou `TOTK_DUMP_BUF`) e ver se é snapshot de memória
+(vk_usnap) ou layout de binding do SDK 7.
 
 ## Próximo
-1. Com o firmware do usuário: `.venv-py314/bin/python tools/extract_fonts.py --firmware <dir NCAs>` (ou
-   `input.firmware` no config) → `build/extracted/firmware/shared-fonts`; rodar sem `TOTK_SHARED_FONTS`.
-2. Seguir até o 1º frame (`--seconds 10 --shot`), item F4 frame; depois tela de título.
-3. Pendências: `frame_rate.c player_pos`/`resolution.c`/`swkbd.c` ainda com constantes do TotK sob `!RT_SMO`;
-   renomear binário para `smo`; alias `SMO_*` → `TOTK_*` em `cfg.c`; sync semanal com upstream.
+1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
+2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
+3. Pendências: `frame_rate.c player_pos`/`resolution.c`/`swkbd.c` com constantes do TotK; `--seconds` usa o relógio
+   do mundo do TotK (no SMO nunca dispara); renomear binário para `smo`; alias `SMO_*` em `cfg.c`; sync com upstream.
 
 ## Bloqueios
-- **Firmware do Switch** (para as fontes compartilhadas `nn::pl`): ver `docs/smo-blockers.md`.
+- Nenhum (firmware opcional: fontes livres funcionam).

@@ -1,16 +1,10 @@
 # Bloqueios
 
-## Firmware do Switch (fontes compartilhadas) — aberto em 2026-11-01
-O SMO usa a fonte compartilhada do sistema (`nn::pl::GetSharedFontAddress(0)` e as outras 5) para todo texto. Ela vem
-do firmware do console (system data 0100000000000810..814), que só o usuário pode fornecer.
-
-O que fazer (qualquer um):
-- Dumpar o firmware do próprio Switch (ex.: TegraExplorer/nxdumptool → pasta com os `.nca`), **ou**
-- Instalar esse firmware num emulador e apontar a pasta `registered` (ex.: `~/.config/Ryujinx/bis/system/Contents/registered`).
-
-Depois: `input.firmware = '<pasta>'` em `config.local.toml` (ou me passe o caminho).
-Enquanto isso, fontes substitutas (Noto) só para desenvolvimento: elas param na lookup de um glifo que só existe na fonte real.
+Nenhum no momento.
 
 ## Resolvidos
+- (2026-11-01) Fontes compartilhadas sem firmware: o `nn::fontll` do SDK 7 quer o TTF decodificado; o runtime decodifica o
+  BFTTF para o SMO (`ov_system.c`) e `tools/smo_substitute_fonts.py` gera 6 fontes livres (Noto/Liberation, OFL).
+  O firmware do usuário continua opcional (só fidelidade visual: `tools/extract_fonts.py`).
 - (2026-11-01) vulkan-headers + vulkan-validation-layers instalados pelo usuário.
 - (2026-11-01) Update correto 1.4.1 dumpado pelo usuário (o primeiro arquivo era 1.3.0).
