@@ -677,6 +677,35 @@ void romfs_close(uint64_t h) {
     if (of) plat_file_close(of);
 }
 
+// The immediate children of a RomFS directory: each file with its size, each subdirectory once. Index rows are sorted
+// by path, so a folder's rows are one run from lower(prefix) and a subdirectory's rows are consecutive. Files added
+// by overlays are not listed. add returns 0 to stop.
+uint32_t romfs_list(const char *path, int (*add)(const char *name, int is_dir, uint64_t size, void *ctx), void *ctx) {
+    const char *p = romfs_path_relative(mount_name, path);
+    if (!p) return FS_R_PATH_NOT_FOUND;
+    char prefix[4096], last[1024] = "";
+    int n = *p ? snprintf(prefix, sizeof prefix, "%s/", p) : 0;
+    if (n < 0 || n >= (int)sizeof prefix) return FS_R_INVALID;
+    prefix[n] = 0;
+    if (n && !folder_exists(prefix)) return FS_R_PATH_NOT_FOUND;
+    for (uint64_t i = n ? lower(prefix) : 0; i < file_count; i++) {
+        Entry e = entry(i);
+        const char *name = entry_name(e);
+        if (strncmp(name, prefix, (size_t)n)) break;
+        const char *rest = name + n, *slash = strchr(rest, '/');
+        if (!slash) {
+            if (!add(rest, 0, e.size, ctx)) break;
+            continue;
+        }
+        size_t k = (size_t)(slash - rest);
+        if (k >= sizeof last || (!strncmp(last, rest, k) && !last[k])) continue;
+        memcpy(last, rest, k);
+        last[k] = 0;
+        if (!add(last, 1, 0, ctx)) break;
+    }
+    return 0;
+}
+
 uint32_t romfs_entry_type(int *out, const char *path) {
     if (!out) return FS_R_INVALID;
     const char *p = romfs_path_relative(mount_name, path);

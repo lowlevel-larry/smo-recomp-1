@@ -1025,16 +1025,28 @@ static uint32_t delete_recursive(const char *path) {
     return remove_tree(p) ? FS_R_INVALID_ARGUMENT : 0;
 }
 
+static int romfs_listing_add(const char *name, int is_dir, uint64_t size, void *ctx) {
+    return listing_add(name, is_dir ? PLAT_FS_DIR : PLAT_FS_FILE, size, ctx);
+}
+
 static uint32_t open_directory(uint64_t *out, const char *path, int mode) {
-    if (romfs_owns(path)) rt_fatal("fs: OpenDirectory on the RomFS (%s) is not implemented", path);
-    char p[PATH_CAP];
-    uint32_t r = host_path(path, p, sizeof p);
-    if (r) return r;
-    if (!out || mode < 1 || mode > 3) return FS_R_INVALID_ARGUMENT;
-    if (plat_fs_kind(p) != PLAT_FS_DIR) return FS_R_PATH_NOT_FOUND;
-    Listing l;
-    int e = list_dir(p, &l);
-    if (e) return fs_result(e);
+    Listing l = {0};
+    if (romfs_owns(path)) {   // SMO lists RomFS folders (ShaderData/); romfs.c walks its index
+        if (!out || mode < 1 || mode > 3) return FS_R_INVALID_ARGUMENT;
+        uint32_t r = romfs_list(path, romfs_listing_add, &l);
+        if (r) {
+            listing_free(l.e, l.n);
+            return r;
+        }
+    } else {
+        char p[PATH_CAP];
+        uint32_t r = host_path(path, p, sizeof p);
+        if (r) return r;
+        if (!out || mode < 1 || mode > 3) return FS_R_INVALID_ARGUMENT;
+        if (plat_fs_kind(p) != PLAT_FS_DIR) return FS_R_PATH_NOT_FOUND;
+        int e = list_dir(p, &l);
+        if (e) return fs_result(e);
+    }
     plat_mutex_lock(&lock);
     for (int i = 0; i < NDIRS; i++)
         if (!dirs[i].used) {
