@@ -299,7 +299,11 @@ def module_glue(layout, linked, hashes, paths, version):
     for name in ('exefs', 'romfs', 'profile'):
         out.append(f'const char rt_default_{name}[] = {c_string(paths[name].as_posix())};')
     number = int(DISPLAY_VERSIONS[version].replace('.', '')) if version in DISPLAY_VERSIONS else 0   # 1.4.3 -> 143
-    out += [f'const int rt_game_version = {number};', f'const char rt_port_version[] = {c_string(port_version())};', '']
+    smo = version.startswith('smo-v')   # Super Mario Odyssey builds: smo-v141 -> 141 (tools/smo_profile.py)
+    if smo:
+        number = int(version[len('smo-v'):])
+    out += [f'const int rt_game_version = {number};', f'const int rt_game_smo = {int(smo)};',
+            f'const char rt_port_version[] = {c_string(port_version())};', '']
     return '\n'.join(out)
 
 

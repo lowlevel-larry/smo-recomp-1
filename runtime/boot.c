@@ -23,10 +23,15 @@
 #include "platform/platform.h"
 
 #define SYM_INIT_START "_ZN2nn4init5StartEmmPFvvES2_S2_"
+// SMO (SDK 7.3.2): nn::init::Start(thread handle, arguments, loader_ready, module_inits), no module_finis; its rtld
+// passes a callback that sets a flag and one that walks the modules' initializers.
+#define SYM_INIT_START_SMO "_ZN2nn4init5StartEmmPFvvES2_"
 // main: return addresses of nnMain's SetFocusHandlingMode call (1.1.1 and 1.2.1 from this port's analysis of main;
 // 1.4.3 from MacNativeGames' scripts/verify_boot.py) and of the first nvnBootstrapLoader call, per game version.
-#define CHECKPOINT_RET (RT_V143 ? 0xbdb48cull : RT_V111 ? 0xeb8c14ull : 0xe7a954ull)
-#define NVN_RET (RT_V143 ? 0xbe0360ull : RT_V111 ? 0xebcdecull : 0xe7eb2cull)
+// SMO 1.4.1 reaches SetFocusHandlingMode through a tail call (main+0x5743b8), so the return address belongs to the
+// wrapper's caller and is not checked (0); its first nvnBootstrapLoader call is the bl at main+0x9413f0.
+#define CHECKPOINT_RET (RT_SMO ? 0ull : RT_V143 ? 0xbdb48cull : RT_V111 ? 0xeb8c14ull : 0xe7a954ull)
+#define NVN_RET (RT_SMO ? 0x9413f4ull : RT_V143 ? 0xbe0360ull : RT_V111 ? 0xebcdecull : 0xe7eb2cull)
 #define CTOR_DONE 2                      // a module's constructor flag after its DT_INIT ran the init_array
 
 // The init_array sizes (1.1.1 and 1.2.1: counted in the modules; 1.4.3: DT_INIT_ARRAYSZ); MacNativeGames' boot check
@@ -35,7 +40,8 @@ typedef struct { const char *name; uint64_t entries; } InitCount;
 static const InitCount inits_111[] = {{"main", 10668}, {"subsdk0", 45}, {"sdk", 116}};
 static const InitCount inits_121[] = {{"main", 10673}, {"subsdk0", 45}, {"sdk", 116}};
 static const InitCount inits_143[] = {{"main", 10717}, {"subsdk0", 45}, {"sdk", 83}};
-#define expected_inits (RT_V143 ? inits_143 : RT_V111 ? inits_111 : inits_121)
+static const InitCount inits_smo[] = {{"main", 191}, {"subsdk0", 44}, {"sdk", 106}};   // SMO 1.4.1 DT_INIT_ARRAYSZ
+#define expected_inits (RT_SMO ? inits_smo : RT_V143 ? inits_143 : RT_V111 ? inits_111 : inits_121)
 
 static volatile int32_t inits_done, checkpoint_seen;
 uint64_t rt_guest_start_ns;
@@ -109,7 +115,7 @@ void rt_boot_event(const char *what, Cpu *c, const char *detail) {
     uint64_t ret = c->x[30];
     caller(c, at, sizeof at);
     if (!strcmp(what, "checkpoint")) {
-        if (ret != main_mod->base + CHECKPOINT_RET)
+        if (CHECKPOINT_RET && ret != main_mod->base + CHECKPOINT_RET)
             rt_fatal("boot: checkpoint %s reached from %s, expected main+%#llx", detail, at,
                      (unsigned long long)CHECKPOINT_RET);
         if (!plat_cas32(&inits_done, 0, 0)) rt_fatal("boot: checkpoint %s before DT_INIT", detail);
@@ -125,7 +131,7 @@ void rt_boot_event(const char *what, Cpu *c, const char *detail) {
         if (ret != main_mod->base + NVN_RET)
             rt_fatal("boot: first NVN call %s(\"%s\") from %s, expected main+%#llx", "nvnBootstrapLoader", detail, at,
                      (unsigned long long)NVN_RET);
-        if (!plat_cas32(&checkpoint_seen, 0, 0))
+        if (!RT_SMO && !plat_cas32(&checkpoint_seen, 0, 0))   // SMO brings up NVN before it sets the focus mode
             rt_fatal("boot: first NVN call before the SetFocusHandlingMode checkpoint");
         rt_logf("boot: first NVN call nvnBootstrapLoader(\"%s\") from main+%#llx\n", detail,
                (unsigned long long)(ret - main_mod->base));
@@ -315,12 +321,14 @@ static uint64_t cb_addr[3];
 
 static void guest_main(Cpu *c) {
     uint32_t handle = kern_main_thread(&c);
-    uint64_t start = ldr_symbol(SYM_INIT_START);
-    if (!start) rt_fatal("boot: %s is not exported", SYM_INIT_START);
+    const char *sym = RT_SMO ? SYM_INIT_START_SMO : SYM_INIT_START;
+    uint64_t start = ldr_symbol(sym);
+    if (!start) rt_fatal("boot: %s is not exported", sym);
     char d[128];
     rt_log("boot: ENTER nn::init::Start at %s, main thread %#x", ldr_describe(start, d, sizeof d), handle);
     // nn::init::Start(main thread handle, arguments region, loader_ready, module_inits, module_finis)
-    rt_call(c, start, 5, (uint64_t)handle, (uint64_t)0, cb_addr[0], cb_addr[1], cb_addr[2]);
+    if (RT_SMO) rt_call(c, start, 4, (uint64_t)handle, (uint64_t)0, cb_addr[0], cb_addr[1]);
+    else rt_call(c, start, 5, (uint64_t)handle, (uint64_t)0, cb_addr[0], cb_addr[1], cb_addr[2]);
     rt_fatal("boot: nn::init::Start returned");
 }
 
