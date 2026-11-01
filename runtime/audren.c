@@ -86,6 +86,7 @@ static void voice_reset(ServerVoice *v) {
     v->loops_done = 0;
     memset(&v->adpcm, 0, sizeof v->adpcm);
     memset(v->biquad_state, 0, sizeof v->biquad_state);
+    v->prev_volume = 0, v->ramp_live = 0;
 }
 
 static void update_voice(AudioRenderer *r, const AudrenVoiceIn *in) {
@@ -318,11 +319,19 @@ static void request_update(AudioRenderer *r, const uint8_t *input, uint64_t in_s
 
 // ---- render tick: one frame each time the output device has taken the ring below its target (audio_mixer_pace_ns),
 // or every sample_count / sample_rate seconds of the host clock without a device, while stopped or while it stalls
-static void advance_voice(AudioRenderer *r, ServerVoice *v, double out_seconds) {
+// The samples a frame consumes are counted exactly as audio_mixer.c voice_render steps through them, one output sample
+// at a time: a product of the frame's length and the rate rounds differently from that sum (a 32 kHz voice at 48 kHz
+// steps by 2/3), so the next frame would start a sample away from where this one ended, a click at every 5 ms seam.
+static void advance_voice(AudioRenderer *r, ServerVoice *v) {
     if (!v->in.in_use || v->state != SV_STARTED || !v->in.sample_rate) return;
-    double want = v->fraction + out_seconds * v->in.sample_rate * (v->in.pitch > 0 ? v->in.pitch : 1.0);
-    uint64_t samples = (uint64_t)want;
-    v->fraction = want - (double)samples;
+    const double step = v->in.sample_rate * (v->in.pitch > 0 ? v->in.pitch : 1.0) / r->param.sample_rate;
+    double frac = v->fraction;
+    uint64_t samples = 0;
+    for (int k = 0; k < r->param.sample_count; k++) {
+        frac += step;
+        while (frac >= 1.0) frac -= 1.0, samples++;
+    }
+    v->fraction = frac;
     while (samples && v->valid[v->index]) {
         AudrenWaveBuffer *b = &v->buffers[v->index];
         uint64_t length = (uint64_t)(b->end - b->start), left = length - v->offset;
@@ -354,12 +363,22 @@ static void render_thread(void *p) {
     plat_thread_priority(PLAT_PRIO_HIGHEST);
     const uint64_t frame_ns = (uint64_t)r->param.sample_count * 1000000000ull / (uint64_t)r->param.sample_rate;
     const double frame = (double)r->param.sample_count / r->param.sample_rate;
-    uint64_t next = kern_now_ns();
+    // Frames rendered for the device are spaced by at least 4/5 of a frame. The device takes a period (1024 frames on
+    // PipeWire, 4.3 render frames) at once, and rendering the refill back to back gave the game no time between frames:
+    // its auxiliary effects (Super Mario Odyssey runs five, atk's effects on the CPU) read each frame's send buffer and
+    // fill the return buffer after the frame's event, as they get one frame every 5 ms from the DSP. A frame rendered
+    // before its return was filled read the ring's old samples: a click at every frame seam in busy scenes.
+    const uint64_t gap_ns = frame_ns * 4 / 5;
+    uint64_t next = kern_now_ns(), last = 0;
     while (plat_cas32(&r->running, 0, 0)) {
         uint64_t now = kern_now_ns();
         int64_t pace = audio_mixer_pace_ns(r, now);
         if (pace > 0) {
             plat_wait_ns((uint64_t)pace);
+            continue;
+        }
+        if (pace == 0 && last && now - last < gap_ns) {
+            plat_wait_ns(gap_ns - (now - last));
             continue;
         }
         if (pace == 0) {
@@ -369,11 +388,12 @@ static void render_thread(void *p) {
             else if (now - next > 100000000ull) next = now;   // fell far behind (debugger, sleep): resynchronise
             next += frame_ns;
         }
+        last = kern_now_ns();
         plat_mutex_lock(&r->lock);
         if (r->state == 0) {
             voices_prepare(r);
             audio_mixer_render(r, frame);
-            for (int i = 0; i < r->param.voice_count; i++) advance_voice(r, &r->voices[i], frame);
+            for (int i = 0; i < r->param.voice_count; i++) advance_voice(r, &r->voices[i]);
             r->elapsed_frames++;
             uint64_t given = r->stop_released + r->empty_played + r->flushed;
             if ((rt_trace & RT_TRACE_IPC) && given != r->logged_released && r->elapsed_frames % 1000 == 0) {

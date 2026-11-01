@@ -22,10 +22,13 @@ static const float early_gains[20] = {.67096f,.61027f,1,.35680f,.68361f,.65978f,
 static unsigned samples(unsigned khz, float ms) { return (unsigned)nearbyintf(khz * ms); }
 static void delay_set(Delay *d, unsigned n) { if (n > d->cap) rt_fatal("reverb delay exceeds capacity"); d->delay = n; d->write = (d->read + n) % (d->cap + 1); }
 static void delay_init(Delay *d, unsigned khz, float ms) { d->cap = samples(khz, ms); d->data = calloc(d->cap + 1, sizeof(float)); if (!d->data) rt_fatal("reverb delay allocation"); delay_set(d, d->cap); }
+// A ring of cap + 1 slots, as delay_set and delay_tap count it. The reference (Ryujinx.Audio's DelayLineReverb3d)
+// wraps its cursors one slot early, so a tap read the never-written last slot once per turn: a dropped sample per
+// reflection, crackle in a strong reverb.
 static float delay_update(Delay *d, float v) {
     d->data[d->write++] = v; float out = d->data[d->read++];
-    if (d->read >= d->cap) d->read = 0;
-    if (d->write >= d->cap) d->write = 0;
+    if (d->read > d->cap) d->read = 0;
+    if (d->write > d->cap) d->write = 0;
     return out;
 }
 static float delay_tap(const Delay *d, unsigned at) { int i = (int)d->write - (int)at - 1; if (i < 0) i += (int)d->cap + 1; return d->data[i]; }

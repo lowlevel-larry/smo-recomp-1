@@ -8,7 +8,7 @@
 // into its destination mix, folds the submixes, runs the mix effects and writes the device sink's stereo mix into a
 // single-producer single-consumer ring. The SDL audio thread drains that ring without taking any lock: an empty ring
 // plays silence and never blocks the render thread or the guest. TOTK_AUDIO=none (or TOTK_AUDIO_OFF) mixes without a
-// device; TOTK_AUDIO_PREFILL_MS (0..500, default 20) is the queued audio the output waits for after start or underrun.
+// device; TOTK_AUDIO_PREFILL_MS (0..500, default 20, 60 in SMO builds) is the queued audio the output waits for after start or underrun.
 // The device's clock paces the render thread, as the audio hardware paces the Switch's DSP (audio_mixer_pace_ns): a
 // frame is rendered when the ring holds less than the output target, max(prefill, two device periods), so the queue and
 // the delay from the game to the speakers stay there and the host and device clocks cannot drift apart. LASRecomp and
@@ -59,6 +59,8 @@ typedef struct Mixer {
     _Atomic uint64_t pulled_ns;                    // kern_now_ns of the device's last request, 0 before the first
     _Atomic uint64_t flush_until; _Atomic unsigned stop_epoch; unsigned callback_epoch;
     EffectState *effect; int *effect_order; unsigned effect_reported;
+    float (*chan_prev)[24];                        // per channel resource: the mix volumes its last frame ended at
+    float *depop;                                  // per mix buffer: the decaying tails of voices that stopped sounding
     uint64_t *sink_address; uint32_t *sink_size, *sink_offset, *sink_old, *sink_written;
     unsigned reported;                             // one-time reports
     float voice_scratch[6][MAX_FRAME], filter_scratch[MAX_FRAME], output_scratch[MAX_FRAME * 2];
@@ -89,9 +91,11 @@ static void report_once(Mixer *m, unsigned bit, const char *msg, int value) {
 
 // ---- output: SDL3 audio stream fed from the ring
 // How much audio the output waits for before it starts, and again after an underrun: TOTK_AUDIO_PREFILL_MS rounded up
-// to whole 5 ms render blocks. Returns -1 for a value outside 0..500 ms.
+// to whole 5 ms render blocks. Returns -1 for a value outside 0..500 ms. Super Mario Odyssey defaults to 60 ms: at
+// 20 (a 42.7 ms target with a 1024-frame device period) its busy scenes ran the ring dry thousands of times in a few
+// minutes on PipeWire, popping in jumps and voices; at 60 none in the same play.
 static int prefill_blocks_for(const char *e) {
-    if (!e || !*e) return 4;
+    if (!e || !*e) return RT_SMO ? 12 : 4;
     char *end;
     double ms = strtod(e, &end);
     if (end == e || *end || !(ms >= 0) || ms > 500) return -1;
@@ -232,6 +236,19 @@ static void output_push(Mixer *m, const float *lr, int frames) {
     if (!m->device_ok) atomic_store(&m->rd, wr + (uint64_t)frames);   // no device: the ring only keeps the latest frames
 }
 
+// TOTK_AUDIO_DUMP=<file>: the device sink's stereo mix before the clamp to [-1, 1], as raw float32 pairs at the
+// renderer's rate, one frame after another as rendered. What the game mixed, apart from the output ring and the device.
+static void dump_note(const float *lr, int frames) {
+    static FILE *f;
+    static int state;   // 0 not opened, 1 writing, -1 off
+    if (!state) {
+        const char *path = cfg_get("TOTK_AUDIO_DUMP");
+        state = path && *path && (f = fopen(path, "wb")) ? 1 : -1;
+        if (state > 0) rt_log("audio: dumping the mix to %s (raw float32 stereo)", path);
+    }
+    if (state > 0) fwrite(lr, sizeof(float) * 2, (size_t)frames, f), fflush(f);
+}
+
 // Level meter (TOTK_TRACE=audio): one line per 5 s of output, and the first nonzero frame.
 static void level_note(AudioRenderer *r, Mixer *m, const float *lr, int frames) {
     if (!(rt_trace & RT_TRACE_AUDIO)) return;
@@ -279,6 +296,10 @@ void audio_mixer_open(AudioRenderer *r) {
     m->effect = calloc((size_t)(r->param.effect_count ? r->param.effect_count : 1), sizeof *m->effect);
     m->effect_order = calloc((size_t)(r->param.effect_count ? r->param.effect_count : 1), sizeof *m->effect_order);
     if (!m->effect || !m->effect_order) rt_fatal("audio effect tables");
+    m->chan_prev = calloc((size_t)(r->param.voice_count ? r->param.voice_count : 1) * 6, sizeof *m->chan_prev);
+    if (!m->chan_prev) rt_fatal("audio mix volume table");
+    m->depop = calloc((size_t)(m->nbuf ? m->nbuf : 1), sizeof *m->depop);
+    if (!m->depop) rt_fatal("audio depop table");
     size_t sinks = (size_t)r->param.sink_count;
     m->sink_address = calloc(sinks, sizeof(uint64_t));
     m->sink_size = calloc(sinks, sizeof(uint32_t));
@@ -328,6 +349,8 @@ void audio_mixer_close(AudioRenderer *r) {
     free(m->sink_written);
     free(m->effect);
     free(m->effect_order);
+    free(m->chan_prev);
+    free(m->depop);
     free(m->buf);
     free(m->offset);
     free(m->split);
@@ -404,6 +427,8 @@ void audio_mixer_update_effects(AudioRenderer *r) {
         const AudrenEffectIn *e=&r->effects[i]; EffectState *s=&m->effect[i];
         unsigned revision=audio_revision(r);
         int reset=e->is_new || s->type!=e->type;
+        if(reset && e->type && (rt_trace & RT_TRACE_AUDIO))
+            rt_log("audio: effect %d: type %u on mix %d, %s, order %d", i, e->type, (int)e->mix_id, e->enabled ? "enabled" : "disabled", (int)e->order);
         if(reset){audio_effect_free(s->dsp);s->dsp=NULL;memset(s->biquad_z,0,sizeof s->biquad_z);}
         if(e->type==3 || e->type==4 || e->type==9) {
             unsigned status,channels;int dimensions_changed=0;
@@ -525,6 +550,35 @@ static float *mixbuf(Mixer *m, int i) { return m->buf + (size_t)i * (size_t)m->f
 static void accumulate(Mixer *m, int buffer, const float *src, float vol, int frames) {
     if (vol == 0 || buffer < 0 || buffer >= m->nbuf) return;
     float *d = mixbuf(m, buffer); for (int k = 0; k < frames; k++) d[k] += src[k] * vol;
+}
+// The audio DSP ramps a voice's volumes over each frame instead of stepping them at its start (Ryujinx.Audio's
+// VolumeRamp and MixRamp commands): from where the last frame ended (from) to this frame's value (to). Stepped, every
+// change of a moving or fading sound clicks at the 5 ms frame seams, heard as a rough, noisy mix.
+static void accumulate_ramp(Mixer *m, int buffer, const float *src, float from, float to, int frames) {
+    if (from == to) return accumulate(m, buffer, src, to, frames);
+    if (buffer < 0 || buffer >= m->nbuf) return;
+    float *d = mixbuf(m, buffer), step = (to - from) / (float)frames;
+    for (int k = 0; k < frames; k++) d[k] += src[k] * (from + step * (float)k);
+}
+// Depop (Ryujinx.Audio's DepopPrepare and DepopForMixBuffers): a voice that sounded in the last frame and does not now
+// (stopped, paused, ended, or its slot taken by a new voice) would drop from its last sample to silence in one step, a
+// click on every cut sound effect. Its last output per mix buffer goes into that buffer's depop value instead, which
+// is added to the buffer and decays by a fixed factor per sample.
+static void depop_take(Mixer *m, ServerVoice *v) {
+    if (!v->sounded) return;
+    v->sounded = 0;
+    for (int b = 0; b < 24; b++)
+        if (v->tail[b] != 0 && v->tail_at + b < m->nbuf) m->depop[v->tail_at + b] += v->tail[b];
+}
+static void depop_apply(Mixer *m, int sample_rate, int frames) {
+    const float decay = sample_rate == 48000 ? 0.962189f : 0.943695f;   // the DSP's factors at 48 and 32 kHz
+    for (int b = 0; b < m->nbuf; b++) {
+        float v = m->depop[b];
+        if (v == 0) continue;
+        float *d = mixbuf(m, b);
+        for (int k = 0; k < frames; k++) d[k] += v, v *= decay;
+        m->depop[b] = fabsf(v) < 1e-7f ? 0 : v;
+    }
 }
 static int mix_valid(AudioRenderer *r, int32_t id) { return id >= 0 && id <= r->param.submix_count && r->mixes[id].in_use; }
 static int mix_depth(AudioRenderer *r, int id) {
@@ -728,7 +782,7 @@ void audio_mixer_render(AudioRenderer *r, double seconds) {
     float (*vs)[MAX_FRAME]=m->voice_scratch,*filtered=m->filter_scratch;
     for (int i = 0; i < r->param.voice_count; i++) {
         ServerVoice *v = &r->voices[i];
-        if (!v->in.in_use || v->state != SV_STARTED || !v->in.sample_rate || !v->valid[v->index]) continue;
+        if (!v->in.in_use || v->state != SV_STARTED || !v->in.sample_rate || !v->valid[v->index]) { depop_take(m, v); continue; }
         int cc = (int)v->in.channel_count; if (cc < 1 || cc > 6) { report_once(m, 2, "voice channel count unsupported", cc); continue; }
         voice_render(r, v, vs, frames);
         for (int f = 0; f < 2; f++) if (v->in.biquads[f].enable) {
@@ -749,22 +803,41 @@ void audio_mixer_render(AudioRenderer *r, double seconds) {
                 }
             }
         }
+        // the voice volume ramp, after the filters: a new voice starts at its volume
+        const float vol_from = v->ramp_live ? v->prev_volume : v->in.volume, vol_to = v->in.volume;
+        if (vol_from != vol_to) {
+            const float step = (vol_to - vol_from) / (float)frames;
+            for (int c = 0; c < cc; c++) for (int k = 0; k < frames; k++) vs[c][k] *= vol_from + step * (float)k;
+        } else if (vol_to != 1) {
+            for (int c = 0; c < cc; c++) for (int k = 0; k < frames; k++) vs[c][k] *= vol_to;
+        }
+        const int live = v->ramp_live;
+        if (!live) depop_take(m, v);   // a new voice in a slot that was sounding: the old sound's tail
+        v->prev_volume = vol_to, v->ramp_live = 1;
         if (v->in.splitter_id != SPLITTER_UNUSED && v->in.splitter_id < (uint32_t)m->nsplit) {
             const SplitInfo *s = &m->split[v->in.splitter_id];
             for (int c = 0; c < cc; c++) for (int k = c; k < s->ndest; k += cc) {
                 SplitDest *d = &m->dest[s->ids[k]];
                 if (!d->used || !mix_valid(r, d->dest)) continue;
                 const float *source=splitter_filter(d,vs[c],filtered,frames);
-                for (int b = 0; b < r->mixes[d->dest].buffer_count && b < 24; b++) accumulate(m, m->offset[d->dest] + b, source, d->vol[b] * v->in.volume, frames);
+                for (int b = 0; b < r->mixes[d->dest].buffer_count && b < 24; b++) accumulate(m, m->offset[d->dest] + b, source, d->vol[b], frames);
             }
         } else if (mix_valid(r, v->in.mix_id)) {
+            memset(v->tail, 0, sizeof v->tail);
             for (int c = 0; c < cc; c++) {
                 int32_t id = v->in.channel_ids[c]; if (id < 0 || id >= r->param.voice_count * 6) continue;
                 const AudrenChannelIn *ch = &r->channels[id];
-                for (int b = 0; b < r->mixes[v->in.mix_id].buffer_count && b < 24; b++) accumulate(m, m->offset[v->in.mix_id] + b, vs[c], ch->mix[b] * v->in.volume, frames);
+                float *prev = m->chan_prev[id];   // the mix ramp: each mix buffer's volume from the last frame's
+                for (int b = 0; b < r->mixes[v->in.mix_id].buffer_count && b < 24; b++) {
+                    accumulate_ramp(m, m->offset[v->in.mix_id] + b, vs[c], live ? prev[b] : ch->mix[b], ch->mix[b], frames);
+                    prev[b] = ch->mix[b];
+                    v->tail[b] += vs[c][frames - 1] * ch->mix[b];
+                }
             }
+            v->tail_at = m->offset[v->in.mix_id], v->sounded = 1;
         }
     }
+    depop_apply(m, r->param.sample_rate, frames);
     /* submixes: deepest first, so every mix is complete before it is folded into its destination */
     int order[256], n = 0, depth[256];
     for (int i = 1; i < mc && n < 256; i++) if (r->mixes[i].in_use) { depth[n] = mix_depth(r, i); order[n++] = i; }
@@ -809,8 +882,10 @@ void audio_mixer_render(AudioRenderer *r, double seconds) {
             } else if (sink->input_count >= 2) { l = ch[0] ? ch[0][k] : 0; rr = ch[1] ? ch[1][k] : 0; }
             else l = rr = ch[0] ? ch[0][k] : 0;
             l *= gain; rr *= gain;
-            lr[2 * k] = l > 1 ? 1 : l < -1 ? -1 : l; lr[2 * k + 1] = rr > 1 ? 1 : rr < -1 ? -1 : rr;
+            lr[2 * k] = l, lr[2 * k + 1] = rr;
         }
+        dump_note(lr, frames);
+        for (int k = 0; k < 2 * frames; k++) lr[k] = lr[k] > 1 ? 1 : lr[k] < -1 ? -1 : lr[k];
     } else if (!sink && !circular) report_once(m, 5, "no device sink in use", r->param.sink_count);
     level_note(r, m, lr, frames);
     output_push(m, lr, frames);
