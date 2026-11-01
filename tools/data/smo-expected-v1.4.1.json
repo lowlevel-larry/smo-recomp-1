@@ -1,0 +1,25 @@
+{
+  "game": "Super Mario Odyssey",
+  "base_title": "0100000000010000",
+  "update_title": "0100000000010800",
+  "display_version": "1.4.1",
+  "base_exefs_sha256": {
+    "main": "e21692d90f8fd2def2d2d22d983d62ac81df3b8b3c762d1f2dca9d9ab7b3053a",
+    "main.npdm": "2bf6faba62576358af6dfb5f858a2fa11069a039dd599182893a5abe83bcf62c",
+    "rtld": "3522d56dda056d4c7ba6f9508d6d1805d9a751b5a189a8700f9714ce06fb6c5a",
+    "sdk": "3997a78d8c907cab470bd7fd793d1d806c7fec44239b73a456e545597808b81e",
+    "subsdk0": "f9f05fa500561893e2133b9de8131776126f78e1d5c2c542e7d594046b844e3e"
+  },
+  "exefs_sha256": {
+    "main": "47ac74a66234bc1eb717b18e01fe7c880d2dd50cf1115fd046f5e5878be5f85f",
+    "main.npdm": "e6a0613e8034c4e4f7d8ece11975df4f790eeba742c63d67375dc6f853c6565c",
+    "rtld": "e893e12a4199b0c2c15775bf03f58987fa6227923ba8a04832aabf2352d2b1b7",
+    "sdk": "754cf4b581d749fbe3d457cf66497b141ef994cf592d247919d64a37dcc30d27",
+    "subsdk0": "d22d98656a19be240b554e7db8d69126d6427232521238d665aec3509087f2cf"
+  },
+  "romfs": {
+    "size": 5678168236,
+    "sha256": "6bb432a4032512f124485aaa5d08f5902b5d5da5027f43968cfc67cff5a97f1d",
+    "files": 4972
+  }
+}
