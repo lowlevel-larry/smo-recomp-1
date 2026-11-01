@@ -14,3 +14,6 @@
 | 2026-11-01 | `RT_SMO` via nome da build `smo-v*` (build_game.py emite `rt_game_smo`) | Ponto de extensão mínimo; nada do TotK muda de comportamento. |
 | 2026-11-01 | Checkpoint SetFocusHandlingMode sem endereço exato no SMO | É alcançado por tail call; a ordem (depois dos DT_INIT) continua checada. |
 | 2026-11-01 | Census de shaders do SMO em `tools/smo_shader_census.py` reaproveitando `shader_census.py` | Só o contêiner muda (Yaz0 via oead); parsers comuns ficam no upstream. |
+| 2026-11-01 | NVN reporta 53.311 para o SMO | O `main` exige major 53 e minor >= 311 (main+0x9414c0). |
+| 2026-11-01 | Serviços online respondidos como console offline (`smo_ov_network.c`) | Regra do plano: stubs explícitos com log; nada de serviço falso no IPC (regra do upstream). |
+| 2026-11-01 | Fontes substitutas só em `build/` para desenvolvimento | Firmware ainda não fornecido; nunca entra no git nem em release. |

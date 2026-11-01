@@ -37,17 +37,26 @@ Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/sm
   0x98761234 presente, mas registros com tamanho 0x861/0x86d (TotK: 0x880/0x88c) e em +0x700 não há (c1, length).
   Ex.: `alCloudShader.sharcb`, 24 controles, 1º em +0x11c8; palavras +0x8: 1, 9, 0x120, 0xb, 0x7d0, 0, 0, 0x7d1.
 
+- [x] F4 shaders: controle NVN do SDK 7 = **0x7d1 bytes** (c1/length +0x700/+0x704, stage +0x714, como no NVN 55).
+  Runtime zera o resto até 0x880 (`gfx_shader.c control_view`); census `tools/smo_shader_census.py --translate`:
+  10.965 shaders, 0 falhas. Todas as probes passam (vkexec desenha com shaders do SMO).
+- [x] Rodando além do boot (`--seconds 10`): NVN 53.311 reportado ao SMO; `nvnQueueAcquireTexture` e
+  `nvnDeviceApplyDeferredFinalizes` (`smo_nvn.c`); overrides SDK 7 em `smo_ov_system.c` (conta, settings, fs),
+  `smo_ov_input.c` (hid direto ao serviço), `smo_ov_network.c` (offline: friends, nifm, bcat, pctl VR, prepo, socket, ssl).
+  Saves em `build/profile-smo-v141/save/`.
+
+## Onde parou
+`TOTK_SHARED_FONTS=$PWD/build/substitute-fonts build/smo-v141/totk --seconds 10 --shot build/smo-v141/shot.png`
+→ carrega as fontes compartilhadas e cai em `main+0x8dea04` (lookup de glifo devolve NULL na lib de fonte). Provável
+glifo que só existe na fonte real (ícones de botão da "nintendo-extension"). As fontes substitutas (Noto,
+`tools/smo_substitute_fonts.py`) são só para desenvolvimento.
+
 ## Próximo
-1. Descobrir o layout do controle NVN do SDK 7 (onde ficam stage, offset/tamanho do código, local size de compute).
-   Fontes: Ryujinx (MIT) `ShaderProgramInfo`/NVN parsing, d2r-mobile, deko3d (`refs/deko3d`), Switchbrew. Depois:
-   - `smo_shader_census.py` com parser SDK 7; `--probe-vkexec` acha jobs em `build/v141/shaders` (o probe usa
-     `build/v%d`: alinhar com `build/smo-v141`).
-   - Conferir o caminho de programa do runtime (`nvn_api_*`: chave do shader lê control[:0x880]).
-2. Rodar além do boot: `build/smo-v141/totk --seconds 10 --shot out.png` → primeiro frame (item F4 frame).
-3. Antigo passo 1. Build: `.venv/bin/python tools/build_game.py --version smo-v141 --expected tools/data/smo-expected-v1.4.1.json`
-   (log em `build/logs/build-smo-v141.log`; binário sai como `build/smo-v141/totk` — renomear para `smo` depois).
-2. `build/smo-v141/totk --selftest` → fecha F2 link e F0 ambiente.
-3. F3: inventário `nn::*` (`docs/smo-sdk-gap.md`): imports do main vs `HOST_OVERRIDE` existentes.
+1. Com o firmware do usuário: `.venv-py314/bin/python tools/extract_fonts.py --firmware <dir NCAs>` (ou
+   `input.firmware` no config) → `build/extracted/firmware/shared-fonts`; rodar sem `TOTK_SHARED_FONTS`.
+2. Seguir até o 1º frame (`--seconds 10 --shot`), item F4 frame; depois tela de título.
+3. Pendências: `frame_rate.c player_pos`/`resolution.c`/`swkbd.c` ainda com constantes do TotK sob `!RT_SMO`;
+   renomear binário para `smo`; alias `SMO_*` → `TOTK_*` em `cfg.c`; sync semanal com upstream.
 
 ## Bloqueios
-- Nenhum.
+- **Firmware do Switch** (para as fontes compartilhadas `nn::pl`): ver `docs/smo-blockers.md`.
