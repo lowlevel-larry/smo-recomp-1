@@ -552,7 +552,7 @@ uint64_t ldr_plt_stub(const char *module, const char *name) {
 }
 
 // ---- --probe-loader
-// Expected values, measured on the 1.1.1, 1.2.1 and 1.4.3 modules; the 1.4.3 relocation totals match the ones
+// Expected values, measured on the 1.1.1, 1.2.1 and 1.4.3 modules (and SMO 1.4.1); the 1.4.3 relocation totals match the ones
 // MacNativeGames' port notes give for that version. 1.1.1 shares subsdk0 and sdk with 1.2.1 down to every count.
 typedef struct {
     const char *name;
@@ -574,7 +574,13 @@ static const Expect expect_143[] = {
     {"subsdk0", {3424, 10927, 905, 3817}, 19073, 6557, 9092, 663, {9, 0, 654}, 0, 0x20, 45},
     {"sdk", {15013, 10135, 1079, 7832}, 34059, 10, 19036, 8, {8, 0, 0}, 0, 0x400, 83},
 };
-#define expect (RT_V143 ? expect_143 : RT_V111 ? expect_111 : expect_121)
+// SMO 1.4.1: the loader's counts, matched by an independent parse of the NSOs (recomp/nso.py).
+static const Expect expect_smo[] = {
+    {"main", {161696, 13587, 33, 641}, 175957, 14261, 0, 702, {0, 16, 674}, 12, 0x30, 191},
+    {"subsdk0", {1677, 12694, 1023, 3781}, 19175, 6545, 10953, 647, {9, 0, 634}, 4, 0x30, 44},
+    {"sdk", {9376, 13453, 1126, 7712}, 31667, 16, 22275, 13, {8, 0, 0}, 5, 0x30, 106},
+};
+#define expect (RT_SMO ? expect_smo : RT_V143 ? expect_143 : RT_V111 ? expect_111 : expect_121)
 
 static int failures;
 #define CHECK(cond, ...) do { if (!(cond)) { failures++; printf("  FAIL: " __VA_ARGS__); putchar('\n'); } } while (0)
