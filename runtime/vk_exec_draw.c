@@ -1936,6 +1936,9 @@ static int pipe_skip_mode(void) {
     static int mode = -1;
     if (mode < 0) {
         const char *e = cfg_value("TOTK_PIPE_SKIP");
+        // SMO renders its colour-grading LUT (8 slices of a 3D texture, one full-screen draw) only when a scene loads,
+        // into a target an earlier frame had rendered: skipping that draw left the LUT black for the whole scene.
+        if (RT_SMO && !cfg_is_set("TOTK_PIPE_SKIP")) e = "strict";
         mode = !strcmp(e, "strict") || !strcmp(e, "0") ? 0 : !strcmp(e, "fullscreen") || !strcmp(e, "2") ? 2 : 1;
         static const char *const what[3] = {"only draws into per-frame passes (TOTK_PIPE_SKIP=strict)",
                                             "draws into passes with a target the previous frame rendered",
