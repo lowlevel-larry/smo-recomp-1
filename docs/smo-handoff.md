@@ -3,7 +3,7 @@
 Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/smo-plan.md`. Alvo: `docs/smo-target.md`.
 
 ## Estado atual (2026-11-01)
-- Fase: **F1 quase completa → F2 (lift e link)**
+- Fase: **F2 — lift e link** (lift ok, cobertura 100%, jump tables 0 divergências; compilando)
 - Repo: `~/projects/smo-recomp`, branch `smo`, remote único `upstream`. Nunca push. `main` = upstream f469c5a.
 - Dashboard: `python3 dashboard/server.py` → **http://127.0.0.1:8787** (`localhost` pode ir para IPv6 e falhar).
 - Versão suportada: **só 1.4.1** (pedido do usuário). Update: `...[0100000000010800][v393216][Update v1.4.1].nsp`.
@@ -20,11 +20,17 @@ Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/sm
 - [x] F1 `tools/smo_profile.py`, `tools/smo_extract.py`, `tools/smo_target_info.py`, `smo-expected-v1.4.1.json`
 - [x] F1 `docs/smo-target.md` (falta só a revisão do audren, que sai no 1º boot)
 
+- [x] F2 lift: `.venv/bin/python recomp/gen.py --exefs build/extracted/smo-v141/exefs --out generated/smo-v141`
+  (genérico, sem mudança; 102.327 funções, 0 unsupported, ~20 s, 336 MB de C)
+- [x] F2 `tools/smo_scan_sites.py`: cobertura 100% (60 SVC, 99 MRS, 12 MSR, 4.763 exclusivas, x18, 1.175 jump tables)
+- [x] F2 `tests/jumptables_check.py --exefs build/extracted/smo-v141/exefs`: 0 divergências, exit 0
+  (corrigi o oráculo do teste: índice via ubfx e table_load; commit separado, upstreamable)
+
 ## Próximo
-1. F2: ver como `recomp/gen.py` / `layout.py` escolhem módulos e versão (são amarrados a v121/v143) e adicionar o
-   perfil SMO com o mínimo de diff. Rodar `gen.py` em main/sdk/subsdk0 da 1.4.1.
-2. `tools/smo_scan_sites.py` (oráculo de cobertura), `tests/jumptables_check.py` no SMO.
-3. `tools/build_game.py` → binário `smo` + `--selftest` (fecha também o item F0 ambiente).
+1. Build: `.venv/bin/python tools/build_game.py --version smo-v141 --expected tools/data/smo-expected-v1.4.1.json`
+   (log em `build/logs/build-smo-v141.log`; binário sai como `build/smo-v141/totk` — renomear para `smo` depois).
+2. `build/smo-v141/totk --selftest` → fecha F2 link e F0 ambiente.
+3. F3: inventário `nn::*` (`docs/smo-sdk-gap.md`): imports do main vs `HOST_OVERRIDE` existentes.
 
 ## Bloqueios
 - Nenhum.
