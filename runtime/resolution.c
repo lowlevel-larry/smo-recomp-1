@@ -194,6 +194,11 @@ void res_heapdef_served(void) { R.heapdef_ok = 1; }
 static uint64_t pack(unsigned w, unsigned h) { return (uint64_t)h << 32 | w; }
 
 void res_init(void) {
+    if (RT_SMO) {   // SMO has no output and scene sets; TOTK_SMO_1080 (recomp/patches-smo-v141.txt) raises its scene
+        rt_log("resolution: output 1920x1080, scene %s", rt_patch_enabled(rt_patch_set("smo1080"))
+               ? "1920x1080 (TOTK_SMO_1080)" : "1600x900 (the game's own)");
+        return;
+    }
     if (!bigger()) {
         rt_log("resolution: the game's own (output 1920x1080, scene 1600x900)");
         return;
@@ -286,4 +291,5 @@ void res_sizes(unsigned out[2], unsigned scene[2]) {
     decide();
     out[0] = R.on ? R.ow : BASE_W, out[1] = R.on ? R.oh : BASE_H;
     scene[0] = R.on ? R.sw : SCENE_W, scene[1] = R.on ? R.sh : SCENE_H;
+    if (RT_SMO && rt_patch_enabled(rt_patch_set("smo1080"))) scene[0] = BASE_W, scene[1] = BASE_H;
 }

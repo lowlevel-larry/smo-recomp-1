@@ -18,7 +18,7 @@
 // as x/2+1/2, UNORM and sRGB bytes written as stored. Caps: MAX_PASSES passes copied, PNG_CAP bytes of PNGs.
 // TOTK_DUMP_TEX=<id>|<w>x<h>[,...]: those texture slots, or 2D textures of that size, are copied where first sampled,
 // whatever their format.
-// TOTK_DUMP_UBO=1: each listed pipeline also prints the first 16 vec4 of its user uniform blocks (c3 and up), read from
+// TOTK_DUMP_UBO=1 (or =<n>): each listed pipeline also prints the first 16 (n) vec4 of its user uniform blocks (c3 and up), read from
 // guest memory when the entry is listed. A block the submission rewrites with UpdateUniformBuffer shows its value from
 // before the submission (vk_exec_draw.c upd_note).
 // TOTK_DUMP_SKIP_RUNS=1: a render pass with the same targets as the render pass before it is logged but not copied
@@ -576,7 +576,7 @@ static void describe_bindings(Str *b, const VkExec *ex, const VkPipeInfo *info) 
             if (u->addr && vk_mem_resolve(u->addr, 1, &ms)) {
                 uint64_t n = u->size && u->size < ms.avail ? u->size : ms.avail;
                 const float *f = (const float *)(uintptr_t)u->addr;
-                for (uint64_t k = 0; k < 16 && (k + 1) * 16 <= n; k++)
+                for (uint64_t k = 0; k < (uint64_t)dump_ubo && (k + 1) * 16 <= n; k++)
                     sp(b, "%s[%llu] %g %g %g %g", k % 4 ? " " : "\n      ", (unsigned long long)k, f[4 * k], f[4 * k + 1],
                        f[4 * k + 2], f[4 * k + 3]);
             } else {
@@ -870,7 +870,7 @@ void vk_dump_init(void) {
     const char *sr = cfg_get("TOTK_DUMP_SKIP_RUNS");
     skip_runs = sr && *sr && *sr != '0';
     const char *du = cfg_get("TOTK_DUMP_UBO");
-    dump_ubo = du && *du && *du != '0';
+    dump_ubo = du && *du && *du != '0' ? (atoi(du) > 1 ? atoi(du) : 16) : 0;   // vec4 per block; "1" is 16
     const char *wt = cfg_get("TOTK_DUMP_TEX");
     for (char *q = (char *)wt; q && *q && nwant_tex < 16; q += *q == ',') {
         uint32_t *w = want_tex[nwant_tex++];

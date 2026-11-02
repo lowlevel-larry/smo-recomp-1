@@ -79,6 +79,23 @@ vez), fazia 4–5 blocos em rajada, e o jogo não preenchia o retorno a tempo: l
 (`audren.c render_thread`): 1,9/s, o jogador não ouve mais. Também entraram: prefill de 60 ms no SMO (o stream tinha
 xruns com 20 ms), o depop do DSP e `TOTK_AUDIO_DUMP=<arquivo>` (mix float32 antes do clamp).
 **Aberto:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
+Brilho piscando, 2026-11-01 (ferramentas NÃO commitadas no working tree: F9 dump `TOTK_DUMP=key`, F6/F7 câmera
+lenta, `TOTK_INVAL_DUMP`, `TOTK_READ_NO_PRESENT_DRAIN`, log de invalidates sob `TOTK_TRACE=gfx` — remover antes do commit):
+é um salto GLOBAL de um frame (tela toda +10–30% de brilho/névoa), quase sempre nos frames em que o jogo invalida as
+tabelas de 128 KB lidas pela CPU (buffer duplo 0x1d7387000/0x1d6965000, a cada 2 frames). Descartado: conteúdo dessas
+tabelas (suave, sem NaN/zeros) e a espera da apresentação no guest_read. Pista aberta: 0x1d8476000 (rgba16f 128x128,
+render target do pass 46, lido a cada frame) e 0x1e409f000 têm checksum SEMPRE igual — conferir se a cópia de volta
+dessas imagens acontece (`vk_be_guest_read` → `vk_texture_cpu_stale`).
+**Backports do TotK, 2026-11-02** (commits no `smo`, base upstream/dev 49c19b2; build e selftest ok, jogo não testado):
+gravador (`90a3b07` objeto adiado leva o carimbo da submissão; `328589a` `TOTK_REC_CHECK=1` / `TOTK_REC_DELAY_US`
+para achar objeto reciclado que o gravador ainda nomeia — usar para retestar o travamento com `TOTK_VK_RECORDER=1`),
+`dbe8daf` (shaders em compilação durante um crash são pulados no próximo início), kernel (`0ab16c2` SignalToAddress,
+`1f824a6` cancel pendente no WaitSynchronization, `7c1cd42` evento de sistema religado, `cacbdf2` saída de thread sem
+longjmp), memória/texturas (`9d95cbd`, `f4f9d6d`, `da94604`, `b6ab660`, `f3ce186`, `4543036`, `53d3f8e` offset
+unsigned do loader 1.2.1), `984c9bc` gradientes do TXD por coordenada (mip certo), `ff5706c`, `c79b5f6`, `526e9f3`,
+`cc4572b`. Pista para o brilho piscando: `f3ce186`/`4543036` mexem justamente no rastreio de escrita de textura.
+Não trazido: `710b7f5` (marcas de passe do TotK usam as words 2/3 do buffer de breadcrumbs, que o `TOTK_CRUMBS_OPS`
+do SMO já usa por op).
 **Acima de 60 fps:** não suportado no SMO (sem tabela de patches de frame rate; o ritmo segue o vsync de 60 Hz).
 Dump de frame: `TOTK_DUMP=1500 TOTK_DUMP_DIR=$PWD/build/smo-v141/dump` (pass_0000 = menu correto; pass_0001 = preto).
 **Bug atual:** o último passe (cópia rgb10a2 → rgba8srgb 0x144800000, 1 draw, vs 0744b810fbe3e242 / fs 3444fa67f4a6dd2e)
@@ -96,3 +113,9 @@ desenhado. `TOTK_PIPE_SKIP=none` não muda. Próximo: despejar o cbuf/vertex buf
 
 ## Bloqueios
 - Nenhum (firmware opcional: fontes livres funcionam).
+
+## Crash conhecido (2026-11-02)
+`FATAL: access violation at smo+0x4f69099, reading 0x1db204ea4`, depois de uns 5 min (frame ~19800), com o menu aberto:
+chamada indireta para `x8 = 0x70200015b0` vinda de `main+0x9422a0`; pilha main+0x625724 <- main+0x964640 <-
+sdk+0x329e88 (início de thread). Já existia antes dos patches do SMO (nenhum conjunto ligado nesse run).
+

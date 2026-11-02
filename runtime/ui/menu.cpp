@@ -136,9 +136,13 @@ static void drain_events(ImGuiIO &io) {
 
 // ---- gamepad navigation: the Switch buttons of our SDL3 gamepad to ImGui's gamepad keys. Nintendo layout: A (east)
 // activates, B (south) cancels.
+// Y is not passed on: ImGui takes GamepadFaceLeft (ImGuiKey_NavGamepadMenu) as its window-switching button, and a press
+// starts its layer toggle without a toggle key, so the next keyboard-sourced frame asserts in IsKeyReleased(ImGuiKey_None)
+// (imgui.cpp NavUpdateWindowing): pressing Y in the menu and then any key aborted the game. The menu is one window and
+// uses no Y.
 static const struct { int bit; ImGuiKey key; } pad_keys[] = {
     {B_A, ImGuiKey_GamepadFaceDown}, {B_B, ImGuiKey_GamepadFaceRight}, {B_X, ImGuiKey_GamepadFaceUp},
-    {B_Y, ImGuiKey_GamepadFaceLeft}, {B_L, ImGuiKey_GamepadL1}, {B_R, ImGuiKey_GamepadR1},
+    {B_L, ImGuiKey_GamepadL1}, {B_R, ImGuiKey_GamepadR1},
     {B_ZL, ImGuiKey_GamepadL2}, {B_ZR, ImGuiKey_GamepadR2}, {B_LEFT, ImGuiKey_GamepadDpadLeft},
     {B_UP, ImGuiKey_GamepadDpadUp}, {B_RIGHT, ImGuiKey_GamepadDpadRight}, {B_DOWN, ImGuiKey_GamepadDpadDown},
 };
@@ -656,14 +660,25 @@ static void tab_screen(float scale) {
     static const UiTextId perf[] = {UI_MENU_PERF_OFF, UI_MENU_PERF_FPS, UI_MENU_PERF_FULL};
     opt_choice("TOTK_PERF_OVERLAY", UI_MENU_PERF_OVERLAY, perf, 3, UI_MENU_PERF_OVERLAY_DESC);
     opt_group(UI_MENU_GRAPHICS);
-    row_output_res();
-    row_render_scale();
+    if (rt_game_smo) {   // SMO has no output and scene patch sets (resolution.c): its own scene switch instead
+        opt_toggle("TOTK_SMO_1080", UI_MENU_SMO_1080, UI_MENU_SMO_1080_DESC);
+    } else {
+        row_output_res();
+        row_render_scale();
+    }
     static const UiTextId up[] = {UI_MENU_UPSCALER_FSR, UI_MENU_UPSCALER_BILINEAR};
     opt_choice("TOTK_UPSCALER", UI_MENU_UPSCALER, up, 2, UI_MENU_UPSCALER_DESC);
     opt_slider("TOTK_SHARPNESS", UI_MENU_SHARPNESS, 0, 100, UI_MENU_SHARPNESS_DESC, 5, "%.0f %%");
     static const UiTextId aspect[] = {UI_MENU_ASPECT_FIT, UI_MENU_ASPECT_STRETCH};
     opt_choice("TOTK_ASPECT", UI_MENU_ASPECT, aspect, 2, UI_MENU_ASPECT_DESC);
-    opt_slider("TOTK_FOV", UI_MENU_FOV, 70, 140, UI_MENU_FOV_DESC, 5, "%.0f %%");
+    if (rt_game_smo) {
+        opt_toggle("TOTK_SMO_LOD", UI_MENU_SMO_LOD, UI_MENU_SMO_LOD_DESC);
+        opt_toggle("TOTK_SMO_PHOTO_QUALITY", UI_MENU_SMO_PHOTO_QUALITY, UI_MENU_SMO_PHOTO_QUALITY_DESC);
+        opt_toggle("TOTK_SMO_PHOTO60", UI_MENU_SMO_PHOTO60, UI_MENU_SMO_PHOTO60_DESC);
+        opt_toggle("TOTK_BLOOM_OFF", UI_MENU_BLOOM_OFF, UI_MENU_BLOOM_OFF_DESC);
+    } else {
+        opt_slider("TOTK_FOV", UI_MENU_FOV, 70, 140, UI_MENU_FOV_DESC, 5, "%.0f %%");
+    }
     rows_color();
     opt_end();
 }

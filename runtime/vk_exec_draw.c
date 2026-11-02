@@ -39,7 +39,7 @@
 #define NVN_STAGE_CS 5
 #define ONESHOT_WAIT_MS 30000u   // prepare_draw: how long a one-shot draw waits for its pipeline before it is skipped
 
-enum { W_PROGRAM, W_SHADER, W_PIPELINE, W_NO_VS, W_INDEX, W_UB, W_BIND, W_SSBO_ALIGN, W_SSBO_SLOT, W_RESTART, W_INDIRECT, W_LOCAL, W_COUNT };
+enum { W_PROGRAM, W_SHADER, W_PIPELINE, W_NO_VS, W_INDEX, W_UB, W_BIND, W_SSBO_ALIGN, W_SSBO_SLOT, W_RESTART, W_INDIRECT, W_LOCAL, W_SHADER2, W_COUNT };
 
 static void warn_once(int key, const char *fmt, ...) {
     static volatile int32_t seen[W_COUNT];
@@ -624,6 +624,8 @@ static int find_stage(const prog_t *p, int nvn_stage, const uint8_t **ctl, const
             uint32_t st;
             memcpy(&st, c + 0x714, 4);
             if (st < 6 && m->idx[st] < 0) m->idx[st] = (int8_t)i, memcpy(&m->len[st], c + 0x704, 4);
+            else if (st < 6) warn_once(W_SHADER2, "program %llu has more than one shader for stage %u (%u shaders): only the "
+                                       "first is used", (unsigned long long)p->serial, st, p->nstage);
         }
     }
     int i = m->idx[nvn_stage];
@@ -2022,6 +2024,61 @@ static void crumb_draw(VkExec *ex, const GfxShader *vs, const GfxShader *fs, int
     vk_crumb_op_draw(gfx_shader_key(vs), fs ? gfx_shader_key(fs) : NULL, prim, count, &t);
 }
 
+// TOTK_BLOOM_OFF (SMO, live): a draw whose fragment shader seeds the bloom, the glare or the lens flare
+// (smo_bloom_keys.inc) contributes nothing. One that blends is dropped; one that writes its targets clears what it
+// would write to zero instead, so the blur and compose passes after it read black rather than a stale frame. A hotfix
+// for the flickering glow around lamps and the moon. The verdict is kept per program serial.
+static const uint64_t bloom_keys[] = {
+#include "smo_bloom_keys.inc"
+};
+
+static uint64_t fnv1a64(const uint8_t *p, uint32_t n) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (uint32_t i = 0; i < n; i++) h = (h ^ p[i]) * 0x100000001b3ull;
+    return h;
+}
+
+static int bloom_off_on(void) {
+    static uint64_t frame = ~0ull;
+    static int on;
+    uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
+    if (f != frame) frame = f, on = RT_SMO && cfg_bool("TOTK_BLOOM_OFF");   // read once a frame: the row is live
+    return on;
+}
+
+static int bloom_off_draw(VkExec *ex) {
+    if (!bloom_off_on()) return 0;
+    static struct { uint64_t serial; int8_t seed; } memo[256];
+    typeof(memo[0]) *m = &memo[ex->prog->serial * 0x9E3779B97F4A7C15ull >> 56];
+    if (!ex->prog->serial || m->serial != ex->prog->serial) {
+        const uint8_t *ctl, *code;
+        uint32_t len;
+        int seed = 0;
+        if (find_stage(ex->prog, NVN_STAGE_FS, &ctl, &code, &len)) {
+            uint64_t h = fnv1a64(code, len);
+            size_t lo = 0, hi = sizeof bloom_keys / sizeof bloom_keys[0];
+            while (lo < hi) {
+                size_t mid = (lo + hi) / 2;
+                if (bloom_keys[mid] < h) lo = mid + 1;
+                else hi = mid;
+            }
+            seed = lo < sizeof bloom_keys / sizeof bloom_keys[0] && bloom_keys[lo] == h;
+        }
+        m->serial = ex->prog->serial, m->seed = (int8_t)seed;
+    }
+    if (!m->seed) return 0;
+    VkRect2D sc = vk_exec_scissor(ex);
+    for (uint32_t i = 0; i < ex->pass_ncolor && i < 8; i++) {
+        if (!ex->color[i].image || !(ex->pipe.chmask.mask >> (4 * i) & 0xf) || ex->pipe.color.blend_en >> i & 1) continue;
+        VkClearAttachment a = {VK_IMAGE_ASPECT_COLOR_BIT, i, {.color = {{0, 0, 0, 0}}}};
+        VkClearRect cr = {sc, 0, ex->pass_layers};
+        vkCmdClearAttachments(ex->cb, 1, &a, 1, &cr);
+        ex->recorded++;
+        ex->fb_dirty |= 1u << i;
+    }
+    return 1;
+}
+
 static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
     if (ex->render_disabled) return 0;
     cb_res(ex);
@@ -2067,6 +2124,7 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
         if (fs_wait) fs = shader_for(ex, NVN_STAGE_FS, &has_fs, NULL, 1);
     }
     if (!vs || (has_fs && !fs)) return 0;
+    if (has_fs && bloom_off_draw(ex)) return 0;
     if (vk_crumbs_ops_on()) crumb_draw(ex, vs, fs, prim, count);
     if ((rt_trace & RT_TRACE_GFX) && vk_exec_oq_counting()) {   // the draws an occlusion count is made of, once each
         static uint64_t seen[256];

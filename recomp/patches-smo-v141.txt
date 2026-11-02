@@ -1,0 +1,49 @@
+# Code patches for Super Mario Odyssey 1.4.1 (recomp/patches.py; gen.py --patches recomp/patches-smo-v141.txt).
+# Ported from Fl4sh's yuzu mods for 1.3.0-1.4.1 (exefs pchtxt, nsobid B424BE15... main, FCF93A41... sdk), each original
+# word checked against the 1.4.1 modules. The mods' branch rewrites become rewrites of the instruction that feeds the
+# branch, since a patched site cannot be a branch (patches.py). Every set is off by default: the game as shipped.
+# Menu rows: Screen > Graphics (runtime/ui/menu.cpp).
+
+set smo1080      TOTK_SMO_1080           0
+set smophoto60   TOTK_SMO_PHOTO60        0
+set smophotoq    TOTK_SMO_PHOTO_QUALITY  0
+set smolod       TOTK_SMO_LOD            0
+
+# 1920x1080 3D scene (docked renders it at 1600x900), with the render target heaps grown to hold it.
+site smo1080    main 4bf2a4 d280c809 d280f009   # mov x9, #1920 (scene size, was 1600)
+site smo1080    main 4bf2a8 f2c07089 f2c08709   # movk x9, #1080, lsl #32 (was 900)
+site smo1080    main 4bf34c 5280c804 5280f004   # mov w4, #1920
+site smo1080    main 4bf350 52807085 52808705   # mov w5, #1080
+site smo1080    main 4e27bc 5280c803 5280f003   # mov w3, #1920
+site smo1080    main 4e27c0 52807084 52808704   # mov w4, #1080
+site smo1080    main 5ef87c b9406d08 5280f008   # mov w8, #1920 (was a load of the docked width)
+site smo1080    main 5ef888 b9406d08 52808708   # mov w8, #1080
+site smo1080    main 5efc2c 1a89b108 5280f008   # mov w8, #1920 (was csel)
+site smo1080    main 5efc40 1a89b108 52808708   # mov w8, #1080
+site smo1080    main 78a6c8 531d7129 5280f009   # mov w9, #1920 (was lsl #3)
+site smo1080    main 78a6cc 531d7108 52808708   # mov w8, #1080
+site smo1080    main 789d74 531d711a 5280f01a   # mov w26, #1920
+site smo1080    main 789d78 531d7135 52808715   # mov w21, #1080
+site smo1080    main 5ef984 3901c008 3901c01f   # strb wzr, [x0, #112]
+site smo1080    main 624b4c 52a15400 52a1d440   # heap 0xaa00000 -> 0xea20000
+site smo1080    main 624b70 320603e8 52a02008   # heap 0x4000000 -> 0x1000000
+site smo1080    main 624b7c 52a0c808 52a1a708   # heap 0x6400000 -> 0xd380000
+site smo1080    main 6cb784 52a06e00 52a01320   # heap 0x3700000 -> 0x990000
+site smo1080    main 4bf4f4 52a02800 52a01c80   # heap 0x1400000 -> 0xe40000
+site smo1080    main 4bf224 52a21c00 52a241e0   # heap 0x10e00000 -> 0x120f0000
+site smo1080    main 4bf258 52a1f400 52a1e860   # heap 0xfa00000 -> 0xf430000
+site smo1080    main 4bf4ac 52a5f000 52a5aa00   # heap 0x2f800000 -> 0x2d500000
+site smo1080    main 386cfc 3940ec48 52800008   # mov w8, #0: the cbz w8 after it always branches (mod: cbz -> b at 386d00)
+site smo1080    main 6a2f2c 52bfce08 52bfd608   # mov w8, #0xfeb00000 (mod writes w0 here, which the add after it discards; w8 is meant)
+
+# Photo mode at 60 fps: the present interval the SDK picks is always 1 (photo mode asks for 2, 30 fps).
+site smophoto60 sdk 026dc0 1a88c128 52800028   # mov w8, #1 (was csel)
+
+# Photo mode graphics quality all the time (heavier on the GPU).
+site smophotoq  main 5ee244 b940a668 52800068   # mov w8, #3 (was the quality mode load)
+
+# Sharper textures: LOD bias -1, 16x anisotropic filtering on every sampler, the game's FXAA off.
+site smolod     main 8fe52c bd401280 1e3e1000   # fmov s0, #-1.0 (LOD bias)
+site smolod     main 8fe590 39401a88 52800808   # mov w8, #0x40: the tbz w8, #6 after it never branches (mod: tbz -> nop)
+site smolod     main 8fe59c 7e21d800 1e261000   # fmov s0, #16.0 (max anisotropy)
+site smolod     main 9bd398 b98582a9 d2800069   # mov x9, #3: the b.hi after cmp w9, #2 always branches (mod: b.hi -> b, FXAA off)

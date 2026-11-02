@@ -245,8 +245,30 @@ static void world_clock(double dt, double step) {
     atomic_store_explicit(&world_us, w + (int64_t)(step * 1e6 + 0.5), memory_order_relaxed);
 }
 
+// SMO's patch sets the game reads every frame or as it builds samplers (recomp/patches-smo-v141.txt) follow their
+// settings while it runs: photo mode's present interval and quality mode, and the sampler LOD bias, anisotropy and
+// FXAA switch (samplers built before the change keep theirs until the area reloads). smo1080 sizes heaps at boot and
+// stays a restart setting.
+static void smo_sets_live(void) {
+    static unsigned seen;
+    static int read;
+    if (!RT_SMO) return;
+    unsigned v = cfg_version();
+    if (read && v == seen) return;
+    read = 1, seen = v;
+    static const char *const knob[] = {"TOTK_SMO_PHOTO60", "TOTK_SMO_PHOTO_QUALITY", "TOTK_SMO_LOD"};
+    static const char *const set[] = {"smophoto60", "smophotoq", "smolod"};
+    for (int i = 0; i < 3; i++) {
+        int s = rt_patch_set(set[i]), on = cfg_bool(knob[i]);
+        if (s < 0 || rt_patch_enabled(s) == on) continue;
+        rt_patch_switch(s, on);
+        rt_log("patches: %s %s", set[i], on ? "on" : "off");
+    }
+}
+
 void frame_step_present(uint64_t display_ns, int interval) {
     frame_limit_live();
+    smo_sets_live();
     double step = 0, dt = last_ns ? (double)(display_ns - last_ns) * 1e-9 : 0;
     if (step_word && last_ns) {
         if (dt > STEP_RESET_S || dt < 0.001) {
