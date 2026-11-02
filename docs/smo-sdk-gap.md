@@ -2,8 +2,8 @@
 
 Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assinatura difere": override para o mesmo nome qualificado com outra assinatura (SDK 20 do TotK), candidato a adaptar; "falta": nenhum override, roda o código do próprio `sdk` do jogo (o padrão; só vira trabalho se esse código precisar de serviço do Horizon que o runtime não emula).
 
-- Imports nn:: dos módulos: 566 (tem 123, assinatura difere 0, falta 443)
-- Overrides do runtime: 216; sem referência em nenhum módulo do SMO: 3
+- Imports nn:: dos módulos: 566 (tem 132, assinatura difere 0, falta 434)
+- Overrides do runtime: 225; sem referência em nenhum módulo do SMO: 3
 - Imports não-nn (libc, NVN, etc.): 728
 
 ## Por namespace
@@ -15,7 +15,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::hid` | 23 | 0 | 26 |
 | `nn::socket` | 1 | 0 | 26 |
 | `nn::fontll` | 0 | 0 | 24 |
-| `nn::oe` | 17 | 0 | 6 |
+| `nn::oe` | 23 | 0 | 0 |
 | `nn::util` | 0 | 0 | 22 |
 | `nn::fs` | 21 | 0 | 0 |
 | `nn::account` | 7 | 0 | 10 |
@@ -25,18 +25,18 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::sf` | 0 | 0 | 11 |
 | `nn::mem` | 0 | 0 | 9 |
 | `nn::nifm` | 8 | 0 | 0 |
-| `nn::web` | 0 | 0 | 8 |
+| `nn::web` | 1 | 0 | 7 |
 | `nn::friends` | 1 | 0 | 5 |
 | `nn::prepo` | 6 | 0 | 0 |
 | `nn::swkbd` | 1 | 0 | 5 |
 | `nn::time` | 6 | 0 | 0 |
-| `nn::vi` | 5 | 0 | 1 |
+| `nn::vi` | 6 | 0 | 0 |
 | `nn::lmem` | 0 | 0 | 6 |
 | `nn::pl` | 3 | 0 | 2 |
 | `nn::crypto` | 0 | 0 | 5 |
 | `nn::image` | 0 | 0 | 5 |
 | `nn::pctl` | 4 | 0 | 0 |
-| `nn::err` | 1 | 0 | 1 |
+| `nn::err` | 2 | 0 | 0 |
 | `nn::ssl` | 0 | 0 | 2 |
 | `nn::settings` | 1 | 0 | 0 |
 | `nnsslInitialize` | 1 | 0 | 0 |
@@ -123,6 +123,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::bcat::MountDeliveryCacheStorage()` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
 | `nn::bcat::RequestSyncDeliveryCache(nn::bcat::DeliveryCacheProgress*)` | `ov_bcat_mount` (runtime/smo_ov_network.c) |
 | `nn::bcat::UnmountDeliveryCacheStorage()` | `ov_bcat_unmount` (runtime/smo_ov_network.c) |
+| `nn::err::ReportMultimediaError(nn::Result, movie::MultimediaTelemetryReport const&)` | `ov_none` (runtime/smo_ov_system.c) |
 | `nn::err::ShowError(nn::Result)` | `ov_show_error` (runtime/ov_system.c) |
 | `nn::friends::Initialize()` | `ov_friends_initialize` (runtime/smo_ov_network.c) |
 | `nn::fs::CloseDirectory(nn::fs::DirectoryHandle)` | `ov_close_directory` (runtime/fs_host.c) |
@@ -189,6 +190,10 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::nifm::IsNetworkRequestOnHold()` | `ov_false` (runtime/smo_ov_network.c) |
 | `nn::nifm::SubmitNetworkRequest()` | `ov_nifm_submit` (runtime/smo_ov_network.c) |
 | `nn::nifm::SubmitNetworkRequestAndWait()` | `ov_nifm_submit` (runtime/smo_ov_network.c) |
+| `nn::oe::BeginBlockingHomeButton()` | `ov_none` (runtime/smo_ov_system.c) |
+| `nn::oe::DisableRecording()` | `ov_none` (runtime/smo_ov_system.c) |
+| `nn::oe::EnableRecording()` | `ov_none` (runtime/smo_ov_system.c) |
+| `nn::oe::EndBlockingHomeButton()` | `ov_none` (runtime/smo_ov_system.c) |
 | `nn::oe::FinishStartupLogo()` | `ov_finish_logo` (runtime/ov_system.c) |
 | `nn::oe::GetCurrentFocusState()` | `ov_focus_state` (runtime/ov_system.c) |
 | `nn::oe::GetDesiredLanguage()` | `ov_desired_language` (runtime/ov_system.c) |
@@ -197,6 +202,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::oe::GetPerformanceConfiguration(nn::oe::PerformanceMode)` | `ov_get_performance_config` (runtime/smo_ov_system.c) |
 | `nn::oe::GetPerformanceMode()` | `ov_performance_mode` (runtime/ov_system.c) |
 | `nn::oe::Initialize()` | `ov_oe_initialize` (runtime/ov_system.c) |
+| `nn::oe::IsUserInactivityDetectionTimeExtended()` | `ov_zero` (runtime/smo_ov_system.c) |
 | `nn::oe::SetCpuBoostMode(nn::oe::CpuBoostMode)` | `ov_cpu_boost` (runtime/ov_system.c) |
 | `nn::oe::SetExpectedVolumeBalance(float, float)` | `ov_set_balance` (runtime/ov_system.c) |
 | `nn::oe::SetFocusHandlingMode(nn::oe::FocusHandlingMode)` | `ov_focus_mode` (runtime/ov_system.c) |
@@ -204,6 +210,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::oe::SetPerformanceConfiguration(nn::oe::PerformanceMode, int)` | `ov_performance_config` (runtime/ov_system.c) |
 | `nn::oe::SetPerformanceModeChangedNotificationEnabled(bool)` | `ov_performance_enabled` (runtime/ov_system.c) |
 | `nn::oe::SetResumeNotificationEnabled(bool)` | `ov_resume_enabled` (runtime/ov_system.c) |
+| `nn::oe::SetScreenShotImageOrientation(nn::album::ImageOrientation)` | `ov_none` (runtime/smo_ov_system.c) |
 | `nn::oe::SetUserInactivityDetectionTimeExtended(bool)` | `ov_inactivity_extended` (runtime/ov_system.c) |
 | `nn::oe::TryPopNotificationMessage(unsigned int*)` | `ov_try_pop` (runtime/ov_system.c) |
 | `nn::pctl::ConfirmStereoVisionRestrictionConfigurable()` | `ov_ok` (runtime/smo_ov_network.c) |
@@ -233,6 +240,8 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 | `nn::vi::GetNativeWindow(void**, nn::vi::Layer*)` | `ov_native_window` (runtime/ov_gfx.c) |
 | `nn::vi::Initialize()` | `ov_vi_initialize` (runtime/ov_gfx.c) |
 | `nn::vi::OpenDefaultDisplay(nn::vi::Display**)` | `ov_open_display` (runtime/ov_gfx.c) |
+| `nn::vi::SetLayerScalingMode(nn::vi::Layer*, nn::vi::ScalingMode)` | `ov_zero` (runtime/smo_ov_system.c) |
+| `nn::web::ShowOfflineHtmlPage(nn::web::OfflineHtmlPageReturnValue*, nn::web::ShowOfflineHtmlPageArg const&)` | `ov_show_offline_html_page` (runtime/smo_ov_system.c) |
 | `nnsslInitialize` | `ov_ssl_initialize` (runtime/smo_ov_network.c) |
 | `void nn::hid::GetTouchScreenState<1ul>(nn::hid::TouchScreenState<1ul>*)` | `ov_touch_state` (runtime/smo_ov_input.c) |
 
@@ -392,7 +401,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::diag::detail::NotNullImpl(unsigned long)`
 - `nn::diag::detail::OnAssertionFailure(nn::diag::AssertionType, char const*, char const*, char const*, int)`
 - `nn::diag::detail::PutImpl(nn::diag::LogMetaData const&, char const*, unsigned long)`
-- `nn::err::ReportMultimediaError(nn::Result, movie::MultimediaTelemetryReport const&)`
 - `nn::fontll::ScalableFontEngine::AcquireGlyphmap(unsigned int, unsigned short)`
 - `nn::fontll::ScalableFontEngine::AcquireOtfKerning(nn::fontll::OtfKerningTable const*, unsigned int, unsigned int, unsigned int)`
 - `nn::fontll::ScalableFontEngine::AcquireOtfKerningFirst(nn::fontll::OtfKerningTable const*, unsigned int, unsigned int)`
@@ -470,12 +478,6 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::mem::StandardAllocator::StandardAllocator(void*, unsigned long)`
 - `nn::nfp::Unmount(nn::nfp::DeviceHandle const&)`
 - `nn::nsd::ResolveEx(nn::nsd::Fqdn*, nn::nsd::Fqdn const&)`
-- `nn::oe::BeginBlockingHomeButton()`
-- `nn::oe::DisableRecording()`
-- `nn::oe::EnableRecording()`
-- `nn::oe::EndBlockingHomeButton()`
-- `nn::oe::IsUserInactivityDetectionTimeExtended()`
-- `nn::oe::SetScreenShotImageOrientation(nn::album::ImageOrientation)`
 - `nn::os::AllocateMemoryBlock(unsigned long*, unsigned long)`
 - `nn::os::AllocateTlsSlot(nn::os::TlsSlot*, void (*)(unsigned long))`
 - `nn::os::AttachReadableHandleToSystemEvent(nn::os::SystemEventType*, unsigned int, bool, nn::os::EventClearMode)`
@@ -613,9 +615,7 @@ Gerado por `tools/smo_sdk_gap.py`. "tem": override com o mesmo símbolo; "assina
 - `nn::util::detail::FloatUlp`
 - `nn::util::detail::SinCoefficients`
 - `nn::util::detail::SinCosSampleTable`
-- `nn::vi::SetLayerScalingMode(nn::vi::Layer*, nn::vi::ScalingMode)`
 - `nn::web::OfflineHtmlPageReturnValue::OfflineHtmlPageReturnValue()`
-- `nn::web::ShowOfflineHtmlPage(nn::web::OfflineHtmlPageReturnValue*, nn::web::ShowOfflineHtmlPageArg const&)`
 - `nn::web::ShowOfflineHtmlPageArg::SetBackgroundKind(nn::web::OfflineBackgroundKind const&)`
 - `nn::web::ShowOfflineHtmlPageArg::SetBootDisplayKind(nn::web::OfflineBootDisplayKind)`
 - `nn::web::ShowOfflineHtmlPageArg::SetFooterEnabled(bool)`

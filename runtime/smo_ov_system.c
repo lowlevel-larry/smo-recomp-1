@@ -121,3 +121,16 @@ static void ob_debugger_attached(Cpu *c) {
     rt_original(c);
 }
 HOST_OBSERVER("_ZN2nn4diag18IsDebuggerAttachedEv", ob_debugger_attached);
+
+// ---- nn::web: the offline browser applet (SMO opens its digital manual pages from the pause menu's help). No
+// library applet runs here, and nn::applet::CreateLibraryApplet crashed on a null handle. The page counts as closed
+// at once: the return value keeps what its constructor set, apart from the exit reason, 0 (closed with the end button).
+static void ov_show_offline_html_page(Cpu *c) {
+    uint64_t out = c->x[0];
+    if (out && plat_mem_readable(out, 8)) ST64(out, 0);
+    static int logged;
+    if (!logged++) rt_log("web: ShowOfflineHtmlPage: no browser applet here; the page counts as closed");
+    ret_x(c, 0);
+}
+HOST_OVERRIDE("_ZN2nn3web19ShowOfflineHtmlPageEPNS0_26OfflineHtmlPageReturnValueERKNS0_22ShowOfflineHtmlPageArgE",
+              ov_show_offline_html_page);

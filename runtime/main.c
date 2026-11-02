@@ -236,6 +236,8 @@ static void crash_handler(const PlatCrash *x) {
             rt_logf("  x%-2d %016llx%s", i, (unsigned long long)c->x[i], i % 4 == 3 ? "\n" : "");
         rt_logf("  sp  %016llx\n  pc  %016llx  lr %s\n", (unsigned long long)c->sp, (unsigned long long)c->pc,
                 ldr_describe(c->x[30], d, sizeof d));
+        const char *hf = hostfn_name(c->pc);   // a call into a host function: name the override that faulted
+        if (hf) rt_logf("  pc is host function %s\n", hf);
         uint64_t fp = c->x[29];
         for (int n = 0; n < 32 && fp && !(fp & 7) && readable(fp, 16); n++) {
             uint64_t next = LD64(fp), lr = LD64(fp + 8);
