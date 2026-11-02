@@ -119,3 +119,19 @@ desenhado. `TOTK_PIPE_SKIP=none` não muda. Próximo: despejar o cbuf/vertex buf
 chamada indireta para `x8 = 0x70200015b0` vinda de `main+0x9422a0`; pilha main+0x625724 <- main+0x964640 <-
 sdk+0x329e88 (início de thread). Já existia antes dos patches do SMO (nenhum conjunto ligado nesse run).
 
+## Sombras verdes / luz indireta escura (aberto, 2026-11-02)
+Sintoma: partes na sombra ficam verde-oliva e escuras (paredes, templo, casas do Reino da Areia); no Ryujinx ficam
+azuladas/claras. A luz ambiente (céu) chega aos shaders como cor (9.58, 21.2, 0) [w = 21.2 = máx]: verde e sem azul,
+como se os canais estivessem deslocados uma posição (o esperado seria algo como (x, 9.58, 21.2)). O sol (68.2, 41.0,
+29.7) parece certo. A CPU monta isso uma vez por carga de fase e copia para os uniforms em main+0x641e10 (chamada por
+main+0x63f930 <- main+0x5e7510; cópias via f_700098bf10). Os cubemaps de sonda (r11g11b10f, capturados na carga) só
+recebem luz da direção do sol.
+Descartado: render condicional (TOTK_COND_LAST_FRAME=0 igual), formato/view dos cubemaps, mips, texturas substitutas,
+laço do shader de sonda (roda 2 vezes), UpdateUniformBuffer, compute pulado, overrides de libm (só memcpy), leituras
+r32f da GPU pela CPU.
+Próximo: execução diferencial contra o Unicorn da função que calcula a cor (gravar registradores + memória na entrada,
+na carga da fase) até a primeira instrução divergente; corrigir no gerador.
+Ferramentas de diagnóstico desta sessão (fora do commit): build/diag-tools-2026-11-02*.patch — F9 dump por tecla,
+F6/F7 câmera lenta, TOTK_WATCH=<addr> (pilha de quem escreve a página) + TOTK_WATCH_FIND=a,b (varre floats), log de
+registro de cubemaps, rt/cube trace, chave TOTK_COND_LAST_FRAME.
+
