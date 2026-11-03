@@ -129,9 +129,14 @@ recebem luz da direção do sol.
 Descartado: render condicional (TOTK_COND_LAST_FRAME=0 igual), formato/view dos cubemaps, mips, texturas substitutas,
 laço do shader de sonda (roda 2 vezes), UpdateUniformBuffer, compute pulado, overrides de libm (só memcpy), leituras
 r32f da GPU pela CPU.
-Próximo: execução diferencial contra o Unicorn da função que calcula a cor (gravar registradores + memória na entrada,
-na carga da fase) até a primeira instrução divergente; corrigir no gerador.
-Ferramentas de diagnóstico desta sessão (fora do commit): build/diag-tools-2026-11-02*.patch — F9 dump por tecla,
-F6/F7 câmera lenta, TOTK_WATCH=<addr> (pilha de quem escreve a página) + TOTK_WATCH_FIND=a,b (varre floats), log de
-registro de cubemaps, rt/cube trace, chave TOTK_COND_LAST_FRAME.
-
+Atualização (2026-11-03): main+0x641e10 está certa. Para cada luz i ela chama f_7000966ef0, que só multiplica a cor
+da luz (objeto+0x31c, Color4f) pela intensidade (objeto+0x23c), e copia o resultado para c3[i]. A cor guardada no
+objeto já vem (0.452, 1.0, 0, 1.0) com intensidade 21.2, o que dá (9.58, 21.2, 0, 21.2); o par 0.452/1.0 das buscas
+de memória é essa cor. O construtor f_70006404c0 põe (1, 1, 1, 1) em +0x31c e registra a cor como parâmetro
+(f_70007b9f70) lido dos dados da fase. O sol usa o mesmo leitor e sai certo, então a suspeita é quem reescreve a cor
+do céu depois (interpolação por área/hora?), não o leitor.
+Próximo (precisa do jogo): TOTK_WATCH_FIND=0.452,1.0 com o jogo na fase e pegar o endereço cujo float em -0xe0 é 21.2
+(o objeto da luz); depois TOTK_WATCH=<esse endereço> desde o início para ter a pilha de quem escreve a cor. Se for
+código de conta, execução diferencial contra o Unicorn dessa função; corrigir no gerador.
+Ferramentas de diagnóstico: TOTK_WATCH, TOTK_WATCH_FIND, o log de registro de cubemaps e TOTK_COND_LAST_FRAME estão
+no working tree sem commit (o build/ com os patches foi apagado). F9/F6/F7 se perderam com ele.
