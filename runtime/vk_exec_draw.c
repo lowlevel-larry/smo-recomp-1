@@ -1529,6 +1529,14 @@ typedef struct { VkImage src; uint32_t cgen; VmaAllocation mem; VkTexImage pub; 
 static MipTwin mtwins[MTWINS];
 static unsigned mtwin_next;
 
+static int smo_sharp_on(void) {   // TOTK_SMO_LOD, read once a frame: the row is live
+    static uint64_t frame = ~0ull;
+    static int on;
+    uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
+    if (f != frame) frame = f, on = RT_SMO && cfg_bool("TOTK_SMO_LOD");
+    return on;
+}
+
 static int smooth_bloom_on(void) {   // the strength, 0..3
     static uint64_t frame = ~0ull;
     static int on;
@@ -1658,6 +1666,16 @@ static MipTwin *mtwin_update(VkExec *ex, const VkTexImage *img) {
 // for its depth twin.
 static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage, int separate, VkDescriptorImageInfo *out) {
     tex_info_lookup(ex, r, h, storage, separate, out);
+    // SMO's "Sharper textures" (TOTK_SMO_LOD): a mipmapped texture from the game's files (world surfaces) samples with
+    // the LOD bias lowered by one and 16x anisotropy. Images the GPU rendered (bloom chain, shadow and post-process
+    // buffers) keep the game's sampler: they pick a mip on purpose, and a finer one made the bloom blocky.
+    if (h && !storage && !separate && out->sampler && smo_sharp_on()) {
+        const VkTexImage *img = vk_texture_by_id_locked((int)(h & 0xfffff), NULL, NULL);
+        if (img && img->mirrored && !img->gpu_owned && img->levels > 1) {
+            VkSampler ss = vk_sampler_sharp_by_id_locked((int)(h >> 20 & 0xfff));
+            if (ss) out->sampler = ss;
+        }
+    }
     if (h && !storage) {   // a 2D array sampled as a cube reads its cube twin
         VkImageViewType vt = res_view_type(r->type);
         if (vt == VK_IMAGE_VIEW_TYPE_CUBE || vt == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {

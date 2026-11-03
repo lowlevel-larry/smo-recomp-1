@@ -328,6 +328,7 @@ VkSampler vk_sampler_by_id_locked(int id);
 // on the Switch although the game binds a linear sampler, and MacNativeGames samples it the same way. VK_NULL_HANDLE
 // for an empty slot.
 VkSampler vk_sampler_point_by_id_locked(int id);
+VkSampler vk_sampler_sharp_by_id_locked(int id);   // SMO's sharper textures: LOD bias -1 and 16x anisotropy
 uint32_t vk_texture_slots_gen(void);
 // What vk_texture_by_id(id) returns can change only when this does: the slot is registered again, or a texture entry at
 // its storage address is created, dropped, released or taken back into use. Unlocked; read it before the lookup it

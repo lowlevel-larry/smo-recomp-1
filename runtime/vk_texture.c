@@ -73,8 +73,9 @@ typedef struct {
     view_t v;
     tex_t t;
 } TexSlot;
-typedef struct { samp_par p; VkSampler s, sp; uint8_t used; } SampSlot;   // s: vk_sampler_for(&p) once looked up; sp:
-                                                                           // its point-sampled form (vk_sampler_point_by_id_locked)
+typedef struct { samp_par p; VkSampler s, sp, ss; uint8_t used; } SampSlot;   // s: vk_sampler_for(&p) once looked up;
+                                                                       // sp: its point-sampled form (vk_sampler_point_by_id_locked);
+                                                                       // ss: its sharper form (vk_sampler_sharp_by_id_locked)
 
 static PlatRMutex tex_lock;
 static PlatOnce tex_once = PLAT_ONCE_INIT;
@@ -1692,7 +1693,7 @@ void vk_sampler_register(int id, const samp_par *s) {
         sslots = p, nsslots = n;
     }
     sslots[id].p = *s;
-    sslots[id].s = sslots[id].sp = VK_NULL_HANDLE;
+    sslots[id].s = sslots[id].sp = sslots[id].ss = VK_NULL_HANDLE;
     sslots[id].used = 1;
     samp_gen++;
     unlock();
@@ -1746,6 +1747,21 @@ VkSampler vk_sampler_point_by_id_locked(int id) {
         s->sp = sampler_for(c, &k);
     }
     return s->sp;
+}
+
+// SMO's "Sharper textures" (TOTK_SMO_LOD): the slot's sampler with the LOD bias lowered by one and 16x anisotropic
+// filtering, for the textures of world surfaces (vk_exec_draw.c tex_info); the slot's own sampler when it has no mip
+// filter or compares.
+VkSampler vk_sampler_sharp_by_id_locked(int id) {
+    VkCtx *c = vk_ctx();
+    if (!c || id < 0 || id >= nsslots || !sslots[id].used) return VK_NULL_HANDLE;
+    SampSlot *s = &sslots[id];
+    if (!s->ss) {
+        samp_par k = s->p;
+        if (k.minf > NVN_MIN_FILTER_LINEAR && !k.cmp_mode) k.lod_bias -= 1.0f, k.aniso = 16.0f;
+        s->ss = sampler_for(c, &k);
+    }
+    return s->ss;
 }
 
 VkSampler vk_sampler_by_id(int id) {

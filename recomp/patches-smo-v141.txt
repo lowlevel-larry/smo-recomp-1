@@ -42,8 +42,7 @@ site smophoto60 sdk 026dc0 1a88c128 52800028   # mov w8, #1 (was csel)
 # Photo mode graphics quality all the time (heavier on the GPU).
 site smophotoq  main 5ee244 b940a668 52800068   # mov w8, #3 (was the quality mode load)
 
-# Sharper textures: LOD bias -1, 16x anisotropic filtering on every sampler, the game's FXAA off.
-site smolod     main 8fe52c bd401280 1e3e1000   # fmov s0, #-1.0 (LOD bias)
-site smolod     main 8fe590 39401a88 52800808   # mov w8, #0x40: the tbz w8, #6 after it never branches (mod: tbz -> nop)
-site smolod     main 8fe59c 7e21d800 1e261000   # fmov s0, #16.0 (max anisotropy)
+# Sharper textures: the game's FXAA off. The LOD bias -1 and 16x anisotropic filtering of the mod are the runtime's
+# (vk_exec_draw.c tex_info), on world surfaces only: the mod's sampler-wide bias made the bloom chain read a finer mip
+# than it asks for and come out blocky.
 site smolod     main 9bd398 b98582a9 d2800069   # mov x9, #3: the b.hi after cmp w9, #2 always branches (mod: b.hi -> b, FXAA off)
