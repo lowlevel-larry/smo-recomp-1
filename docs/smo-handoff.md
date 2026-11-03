@@ -127,8 +127,9 @@ amostra o céu como cubo a partir de um array 2D BC3 de 6 camadas (128x128, 8 n�
 CUBE_COMPATIBLE (só alvos CUBEMAP eram), então `vk_exec_draw.c get_view` não dava a vista de cubo e o shader lia a
 textura substituta preta. Sem o céu, a luz indireta ficava só com a luz de preenchimento (0.452, 1.0, 0) x 21.2, que
 é verde mesmo nos dados da fase (o Power Moon recebe os mesmos uniforms).
-Correção: `vk_texture.c` cria CUBE_COMPATIBLE também arrays 2D quadrados de 6k camadas, fora do driver da AMD
-(VK_DRIVER_ID_AMD_PROPRIETARY, onde a flag em arrays quadrados quebrou texturas de terreno no BotW); `get_view` aceita
-vista de cubo de imagens com `cube_ok`. No driver Windows da AMD o céu da sonda continua faltando.
+Correção: o array ganha um "cube twin" (`vk_exec_draw.c` ctwin_update): uma imagem CUBE_COMPATIBLE do mesmo formato,
+tamanho, níveis e camadas, copiada do array na primeira leitura como cubo e de novo quando o contador de conteúdo
+(`VkTexImage.cgen`, `vk_texture.c`) muda. A imagem original não muda, então vale para todos os drivers. Numa partida de
+13.200 frames foram 10 cópias, todas em cargas de área. TOTK_CUBE_TWIN=0 desliga.
 Ferramentas de diagnóstico (sem commit, no working tree): TOTK_POKE (find/peek/hold/dump/dumplog ao vivo),
 TOTK_DUMP_LOG_CUBES, TOTK_OCCLUSION_VISIBLE, TOTK_WATCH, o log de registro de cubemaps.
