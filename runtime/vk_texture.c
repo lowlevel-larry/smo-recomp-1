@@ -331,12 +331,15 @@ static Tex *create_tex(const tex_t *t, const TexKey *k, int defer_init) {
     if ((d->flags & NVN_TEXTURE_FLAGS_IMAGE) && (ff & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) && samples == 1)
         usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     VkImageCreateFlags flags = ds ? 0 : VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;   // format-reinterpreting views
-    // Cube compatible only for cube targets: the replay makes cube views of nothing else (vk_exec_draw.c get_view checks
-    // the image's own view type). The flag on every square array of 6+ layers changed how AMD's Windows driver lays such
-    // an image out, and terrain material arrays sampled through it came out in rainbow blocks that moved with the mip
+    // Cube compatible for cube targets (vk_exec_draw.c get_view makes cube views only of images with the flag). The flag
+    // on every square array of 6+ layers changed how AMD's Windows driver lays such an image out, and terrain material arrays sampled through it came out in rainbow blocks that moved with the mip
     // level (Savage Wind Recomp issue #59, BotW on an RX 580 and a 7800 XT).
+    // A square 2D array of 6k layers is cube compatible too off AMD's own driver: NVN lets a shader sample such an
+    // array as a cube, and SMO's sky cube (the BC3 array its probe filter samples, so the sky's blue reaches the
+    // indirect light) is one. Without the flag get_view has no cube view to give and the shader read a black stand-in.
     if (type == VK_IMAGE_TYPE_2D && layers >= 6 && w == h && samples == 1 &&
-        (d->target == NVN_TEXTURE_TARGET_CUBEMAP || d->target == NVN_TEXTURE_TARGET_CUBEMAP_ARRAY))
+        (d->target == NVN_TEXTURE_TARGET_CUBEMAP || d->target == NVN_TEXTURE_TARGET_CUBEMAP_ARRAY ||
+         (d->target == NVN_TEXTURE_TARGET_2D_ARRAY && layers % 6 == 0 && !vk_caps.amd_prop)))
         flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     // NVN renders into a 3D texture slice by slice (a view's min layer is the depth plane, nvn_mtl.m), e.g. the
     // grading LUT of the menu background blur. Vulkan needs a 2D view of the slice for that.
@@ -418,6 +421,7 @@ static Tex *create_tex(const tex_t *t, const TexKey *k, int defer_init) {
                  : d->target == NVN_TEXTURE_TARGET_CUBEMAP_ARRAY && (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY
                  : layers > 1 || d->target == NVN_TEXTURE_TARGET_2D_ARRAY || d->target == NVN_TEXTURE_TARGET_2D_MULTISAMPLE_ARRAY
                      ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    p->cube_ok = (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) != 0;
     p->alpha_one = f.alpha_one;
     memcpy(p->chan, f.chan, sizeof p->chan);
     p->swz[0] = (uint8_t)d->swizzle_r, p->swz[1] = (uint8_t)d->swizzle_g;

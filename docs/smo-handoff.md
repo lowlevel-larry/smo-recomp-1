@@ -119,24 +119,16 @@ desenhado. `TOTK_PIPE_SKIP=none` não muda. Próximo: despejar o cbuf/vertex buf
 chamada indireta para `x8 = 0x70200015b0` vinda de `main+0x9422a0`; pilha main+0x625724 <- main+0x964640 <-
 sdk+0x329e88 (início de thread). Já existia antes dos patches do SMO (nenhum conjunto ligado nesse run).
 
-## Sombras verdes / luz indireta escura (aberto, 2026-11-02)
-Sintoma: partes na sombra ficam verde-oliva e escuras (paredes, templo, casas do Reino da Areia); no Ryujinx ficam
-azuladas/claras. A luz ambiente (céu) chega aos shaders como cor (9.58, 21.2, 0) [w = 21.2 = máx]: verde e sem azul,
-como se os canais estivessem deslocados uma posição (o esperado seria algo como (x, 9.58, 21.2)). O sol (68.2, 41.0,
-29.7) parece certo. A CPU monta isso uma vez por carga de fase e copia para os uniforms em main+0x641e10 (chamada por
-main+0x63f930 <- main+0x5e7510; cópias via f_700098bf10). Os cubemaps de sonda (r11g11b10f, capturados na carga) só
-recebem luz da direção do sol.
-Descartado: render condicional (TOTK_COND_LAST_FRAME=0 igual), formato/view dos cubemaps, mips, texturas substitutas,
-laço do shader de sonda (roda 2 vezes), UpdateUniformBuffer, compute pulado, overrides de libm (só memcpy), leituras
-r32f da GPU pela CPU.
-Atualização (2026-11-03): main+0x641e10 está certa. Para cada luz i ela chama f_7000966ef0, que só multiplica a cor
-da luz (objeto+0x31c, Color4f) pela intensidade (objeto+0x23c), e copia o resultado para c3[i]. A cor guardada no
-objeto já vem (0.452, 1.0, 0, 1.0) com intensidade 21.2, o que dá (9.58, 21.2, 0, 21.2); o par 0.452/1.0 das buscas
-de memória é essa cor. O construtor f_70006404c0 põe (1, 1, 1, 1) em +0x31c e registra a cor como parâmetro
-(f_70007b9f70) lido dos dados da fase. O sol usa o mesmo leitor e sai certo, então a suspeita é quem reescreve a cor
-do céu depois (interpolação por área/hora?), não o leitor.
-Próximo (precisa do jogo): TOTK_WATCH_FIND=0.452,1.0 com o jogo na fase e pegar o endereço cujo float em -0xe0 é 21.2
-(o objeto da luz); depois TOTK_WATCH=<esse endereço> desde o início para ter a pilha de quem escreve a cor. Se for
-código de conta, execução diferencial contra o Unicorn dessa função; corrigir no gerador.
-Ferramentas de diagnóstico: TOTK_WATCH, TOTK_WATCH_FIND, o log de registro de cubemaps e TOTK_COND_LAST_FRAME estão
-no working tree sem commit (o build/ com os patches foi apagado). F9/F6/F7 se perderam com ele.
+## Sombras verdes / luz indireta escura (resolvido, 2026-11-03)
+Sintoma: tudo o que estava na sombra (paredes, prédios, sombras dinâmicas do Reino da Areia) ficava verde-oliva e
+escuro; no Power Moon Recomp e no console fica azulado e claro.
+Causa: o filtro das sondas de luz (passe que gera o cubo rgba8 de cada sonda na carga da área, fs 18db8d4f67f421da)
+amostra o céu como cubo a partir de um array 2D BC3 de 6 camadas (128x128, 8 níveis). A imagem não era criada
+CUBE_COMPATIBLE (só alvos CUBEMAP eram), então `vk_exec_draw.c get_view` não dava a vista de cubo e o shader lia a
+textura substituta preta. Sem o céu, a luz indireta ficava só com a luz de preenchimento (0.452, 1.0, 0) x 21.2, que
+é verde mesmo nos dados da fase (o Power Moon recebe os mesmos uniforms).
+Correção: `vk_texture.c` cria CUBE_COMPATIBLE também arrays 2D quadrados de 6k camadas, fora do driver da AMD
+(VK_DRIVER_ID_AMD_PROPRIETARY, onde a flag em arrays quadrados quebrou texturas de terreno no BotW); `get_view` aceita
+vista de cubo de imagens com `cube_ok`. No driver Windows da AMD o céu da sonda continua faltando.
+Ferramentas de diagnóstico (sem commit, no working tree): TOTK_POKE (find/peek/hold/dump/dumplog ao vivo),
+TOTK_DUMP_LOG_CUBES, TOTK_OCCLUSION_VISIBLE, TOTK_WATCH, o log de registro de cubemaps.
