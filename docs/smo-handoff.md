@@ -43,7 +43,7 @@ Leia isto primeiro ao retomar. Atualizado a cada passo. Plano completo: `docs/sm
 - [x] Rodando além do boot (`--seconds 10`): NVN 53.311 reportado ao SMO; `nvnQueueAcquireTexture` e
   `nvnDeviceApplyDeferredFinalizes` (`smo_nvn.c`); overrides SDK 7 em `smo_ov_system.c` (conta, settings, fs),
   `smo_ov_input.c` (hid direto ao serviço), `smo_ov_network.c` (offline: friends, nifm, bcat, pctl VR, prepo, socket, ssl).
-  Saves em `build/profile-smo-v141/save/`.
+  Saves: `~/.local/share/smo-recomp/profile/save/` pelo `tools/run_safe.sh` (TOTK_PROFILE_DIR; fora do build/).
 
 - [x] Fontes sem firmware: o `nn::fontll` do SDK 7 quer o sfnt decodificado (runtime decodifica o BFTTF para o SMO);
   `tools/smo_substitute_fonts.py` gera 6 fontes livres distintas (Noto/Liberation) em `build/substitute-fonts`.

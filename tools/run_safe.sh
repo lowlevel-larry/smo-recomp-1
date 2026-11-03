@@ -6,6 +6,9 @@
 cd "$(dirname "$0")/.." || exit 1
 mode=cpu; [ "$1" = --gpu ] && { mode=gpu; shift; }
 export TOTK_SHARED_FONTS=$PWD/build/substitute-fonts
+# Saves e configurações fora do build/, para que apagar o build/ não leve o progresso.
+export TOTK_PROFILE_DIR=${TOTK_PROFILE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smo-recomp/profile}
+mkdir -p "$TOTK_PROFILE_DIR"
 if [ $mode = cpu ]; then
   export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
   export TOTK_GPU_NAME=llvmpipe MESA_SHADER_CACHE_DIR=$PWD/build/smo-v141/lvp-cache \
