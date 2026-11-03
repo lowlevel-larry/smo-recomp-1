@@ -676,6 +676,9 @@ static void tab_screen(float scale) {
         opt_toggle("TOTK_SMO_PHOTO_QUALITY", UI_MENU_SMO_PHOTO_QUALITY, UI_MENU_SMO_PHOTO_QUALITY_DESC);
         opt_toggle("TOTK_SMO_PHOTO60", UI_MENU_SMO_PHOTO60, UI_MENU_SMO_PHOTO60_DESC);
         opt_toggle("TOTK_BLOOM_OFF", UI_MENU_BLOOM_OFF, UI_MENU_BLOOM_OFF_DESC);
+        opt_toggle("TOTK_GLARE_OFF", UI_MENU_GLARE_OFF, UI_MENU_GLARE_OFF_DESC);
+        opt_toggle("TOTK_FLARE_OFF", UI_MENU_FLARE_OFF, UI_MENU_FLARE_OFF_DESC);
+        opt_toggle("TOTK_SMOOTH_BLOOM", UI_MENU_SMOOTH_BLOOM, UI_MENU_SMOOTH_BLOOM_DESC);
     } else {
         opt_slider("TOTK_FOV", UI_MENU_FOV, 70, 140, UI_MENU_FOV_DESC, 5, "%.0f %%");
     }

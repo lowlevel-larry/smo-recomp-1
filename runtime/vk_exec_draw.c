@@ -376,6 +376,7 @@ static void dummies_init(void) {
 
 static void twins_release(VkCtx *c);
 static void ctwins_release(VkCtx *c);
+static void mtwins_release(VkCtx *c);
 
 // Releases the stand-ins and the depth and cube twins. The device must be idle; the game path leaves them to process exit like
 // the pipelines.
@@ -384,6 +385,7 @@ void vk_exec_draw_shutdown(void) {
     VkCtx *c = vk_ctx();
     twins_release(c);
     ctwins_release(c);
+    mtwins_release(c);
     for (int i = 0; i < DV_COUNT; i++) {
         if (Z.img[i].sview != Z.img[i].view) vkDestroyImageView(c->device, Z.img[i].sview, NULL);
         vkDestroyImageView(c->device, Z.img[i].view, NULL);
@@ -574,10 +576,12 @@ VkImageView vk_exec_target_view(const VkTexImage *img, VkFormat format, VkImageV
 }
 
 static void ctwins_source_gone(VkImage image);
+static void mtwins_source_gone(VkImage image);
 
 void vk_exec_image_gone(VkImage image) {
     vk_exec_bc_gone(image);
     ctwins_source_gone(image);
+    mtwins_source_gone(image);
     if (!views_by_image.klen) return;
     for (ViewNode *n = nvn_hm_del(&views_by_image, &image), *next; n; n = next) {
         next = n->next;
@@ -1509,6 +1513,143 @@ static CubeTwin *ctwin_update(VkExec *ex, const VkTexImage *img) {
     return t;
 }
 
+// ---- mip twins: SMO's bloom mask reads a mipmapped copy of the scene (TOTK_SMOOTH_BLOOM)
+// SMO's bloom mask (agl bloom_mask) draws a target 1/16 the scene's size and samples the scene once per pixel with an
+// implicit LOD. The scene has one level, so each mask pixel is a bilinear tap of four scene pixels: a small bright
+// light lands in a mask pixel or misses it as the camera moves, and the bloom flickers and comes out blocky. With
+// TOTK_SMOOTH_BLOOM the mask samples a mip twin instead: the scene copied into an image with a full mip chain, each
+// level blitted from the one above, so the implicit LOD picks the level whose texels average what the mask pixel
+// covers. Made again whenever the scene's content generation moved; the copy ends the mask's pass and opens it again.
+// An enhancement over the console, which samples the single level; TOTK_SMOOTH_BLOOM=0 gives the game's picture.
+enum { FX_BLOOM = 1, FX_GLARE = 2, FX_FLARE = 4 };   // smo_bloom_keys.inc: the effect a seed shader belongs to
+static int fx_seed_of(VkExec *ex);
+#define MTWINS 4
+typedef struct { VkImage src; uint32_t cgen; VmaAllocation mem; VkTexImage pub; } MipTwin;
+static MipTwin mtwins[MTWINS];
+static unsigned mtwin_next;
+
+static int smooth_bloom_on(void) {
+    static uint64_t frame = ~0ull;
+    static int on;
+    uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
+    if (f != frame) frame = f, on = RT_SMO && cfg_bool("TOTK_SMOOTH_BLOOM");   // read once a frame: the row is live
+    return on;
+}
+
+static int mtwin_format_ok(VkFormat f) {
+    static VkFormat known[8];
+    static int8_t ok[8];
+    static int n;
+    for (int i = 0; i < n; i++)
+        if (known[i] == f) return ok[i];
+    VkFormatProperties p;
+    vkGetPhysicalDeviceFormatProperties(vk_ctx()->phys, f, &p);
+    VkFormatFeatureFlags need = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+                                VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    int r = (p.optimalTilingFeatures & need) == need;
+    if (n < 8) known[n] = f, ok[n++] = (int8_t)r;
+    if (!r) rt_log("vk_exec: smooth bloom: format %d cannot be blitted with a linear filter here; the mask reads the scene", (int)f);
+    return r;
+}
+
+static void mtwin_drop(MipTwin *t) {   // texture lock held
+    if (!t->pub.image) return;
+    vk_exec_image_gone(t->pub.image);
+    CubeTwinGone *g = malloc(sizeof *g);
+    if (!g) rt_fatal("vk: out of memory (mip twin)");
+    *g = (CubeTwinGone){t->pub.image, t->mem};
+    vk_completion_add(vk_sync_issued() + 1, ctwin_free, g);
+    *t = (MipTwin){0};
+}
+
+static void mtwins_source_gone(VkImage image) {
+    for (int i = 0; i < MTWINS; i++)
+        if (mtwins[i].src == image) mtwin_drop(&mtwins[i]);
+}
+
+static void mtwins_release(VkCtx *c) {   // shutdown, device idle
+    for (int i = 0; i < MTWINS; i++)
+        if (mtwins[i].pub.image) vmaDestroyImage(c->vma, mtwins[i].pub.image, mtwins[i].mem);
+    memset(mtwins, 0, sizeof mtwins);
+}
+
+// The mip twin of img with img's current texels in level 0 and the levels below blitted from it, recorded into ex->cb
+// when img changed; NULL when it cannot be made. Texture lock held.
+static MipTwin *mtwin_update(VkExec *ex, const VkTexImage *img) {
+    if (!mtwin_format_ok(img->format)) return NULL;
+    VkCtx *c = vk_ctx();
+    MipTwin *t = NULL;
+    for (int i = 0; i < MTWINS && !t; i++)
+        if (mtwins[i].src == img->image && mtwins[i].pub.format == img->format && mtwins[i].pub.width == img->width &&
+            mtwins[i].pub.height == img->height)
+            t = &mtwins[i];
+    int fresh = !t;
+    if (!t) {
+        t = &mtwins[mtwin_next++ % MTWINS];
+        mtwin_drop(t);
+        uint32_t levels = 1;
+        for (uint32_t m = img->width > img->height ? img->width : img->height; m > 1; m >>= 1) levels++;
+        VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+                                .format = img->format, .extent = {img->width, img->height, 1}, .mipLevels = levels,
+                                .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+        VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+        VkImage im;
+        if (vmaCreateImage(c->vma, &ci, &ai, &im, &t->mem, NULL) != VK_SUCCESS) {
+            *t = (MipTwin){0};
+            return NULL;
+        }
+        t->src = img->image;
+        t->pub = *img;
+        t->pub.image = im;
+        t->pub.levels = levels, t->pub.layers = 1;
+        t->pub.view_type = VK_IMAGE_VIEW_TYPE_2D;
+        t->pub.usage = ci.usage;
+        t->pub.block_views = 0, t->pub.fb_usage = 0, t->pub.fb_learned = 0, t->pub.bound = 0;
+        static int nlog;
+        if (nlog++ < 4)
+            rt_log("vk_exec: smooth bloom: mip twin %ux%u, %u levels, format %d, for the bloom mask", img->width,
+                   img->height, levels, (int)img->format);
+    }
+    if (!fresh && t->cgen == img->cgen) return t;
+    t->cgen = img->cgen;
+    int reopen = ex->in_pass;
+    vk_exec_barrier(ex);   // ends the pass; the scene's writes and the twin's earlier readers come first
+    VkImageMemoryBarrier2 ib = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                                .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_TRANSFER_READ_BIT,
+                                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                .image = t->pub.image,
+                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, t->pub.levels, 0, 1}};
+    VkDependencyInfo d0 = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1,
+                           .pImageMemoryBarriers = &ib};
+    vkCmdPipelineBarrier2(ex->cb, &d0);
+    VkImageCopy rg = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                      .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .extent = {img->width, img->height, 1}};
+    vkCmdCopyImage(ex->cb, img->image, VK_IMAGE_LAYOUT_GENERAL, t->pub.image, VK_IMAGE_LAYOUT_GENERAL, 1, &rg);
+    VkMemoryBarrier2 mb = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2, .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                           .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT, .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                           .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT};
+    VkDependencyInfo d1 = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &mb};
+    for (uint32_t l = 1; l < t->pub.levels; l++) {
+        vkCmdPipelineBarrier2(ex->cb, &d1);   // level l-1 is written before it is read
+        int32_t sw = (int32_t)(img->width >> (l - 1) ? img->width >> (l - 1) : 1);
+        int32_t sh = (int32_t)(img->height >> (l - 1) ? img->height >> (l - 1) : 1);
+        int32_t dw = sw > 1 ? sw / 2 : 1, dh = sh > 1 ? sh / 2 : 1;
+        VkImageBlit b = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l - 1, 0, 1}, .srcOffsets = {{0, 0, 0}, {sw, sh, 1}},
+                         .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, 1}, .dstOffsets = {{0, 0, 0}, {dw, dh, 1}}};
+        vkCmdBlitImage(ex->cb, t->pub.image, VK_IMAGE_LAYOUT_GENERAL, t->pub.image, VK_IMAGE_LAYOUT_GENERAL, 1, &b,
+                       VK_FILTER_LINEAR);
+    }
+    ex->recorded += 2 + 2 * (t->pub.levels - 1);
+    vk_exec_barrier(ex);   // the levels before the mask samples them
+    if (reopen) vk_exec_pass_begin(ex);
+    return t;
+}
+
 // The image descriptor of slot h; in a dispatch, a compare-sampled colour image the driver cannot compare is swapped
 // for its depth twin.
 static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage, int separate, VkDescriptorImageInfo *out) {
@@ -1523,6 +1664,19 @@ static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage,
             VkImageView tv = t ? get_view(ex, &t->pub, &v, hv, r->type, 0) : VK_NULL_HANDLE;
             if (tv) out->imageView = tv, out->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             return;
+        }
+    }
+    if (h && !storage && smooth_bloom_on() && (fx_seed_of(ex) & FX_BLOOM)) {   // the bloom mask reads a mip twin
+        VkImageViewType vt = res_view_type(r->type);
+        view_t v;
+        int hv;
+        const VkTexImage *img = vt == VK_IMAGE_VIEW_TYPE_2D ? vk_texture_by_id_locked((int)(h & 0xfffff), &v, &hv) : NULL;
+        if (img && img->type == VK_IMAGE_TYPE_2D && img->levels == 1 && img->layers == 1 && img->samples == 1 &&
+            img->aspect == VK_IMAGE_ASPECT_COLOR_BIT && ex->pass_w && img->width >= 4 * ex->pass_w) {
+            MipTwin *t = mtwin_update(ex, img);
+            if (hv) v.set_levels = 0, v.set_layers = 0;
+            VkImageView tv = t ? get_view(ex, &t->pub, &v, hv, r->type, 0) : VK_NULL_HANDLE;
+            if (tv) out->imageView = tv, out->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         }
     }
     if (!twin_dispatch || storage || separate || !h || !(r->type & 0x400)) return;
@@ -2164,11 +2318,11 @@ static void crumb_draw(VkExec *ex, const GfxShader *vs, const GfxShader *fs, int
     vk_crumb_op_draw(gfx_shader_key(vs), fs ? gfx_shader_key(fs) : NULL, prim, count, &t);
 }
 
-// TOTK_BLOOM_OFF (SMO, live): a draw whose fragment shader seeds the bloom, the glare or the lens flare
-// (smo_bloom_keys.inc) contributes nothing. One that blends is dropped; one that writes its targets clears what it
+// TOTK_BLOOM_OFF, TOTK_GLARE_OFF, TOTK_FLARE_OFF (SMO, live, one switch per effect): a draw whose fragment shader
+// seeds a switched-off effect (smo_bloom_keys.inc: the bloom, the glare or the lens flare) contributes nothing. One that blends is dropped; one that writes its targets clears what it
 // would write to zero instead, so the blur and compose passes after it read black rather than a stale frame. A hotfix
 // for the flickering glow around lamps and the moon. The verdict is kept per program serial.
-static const uint64_t bloom_keys[] = {
+static const struct { uint64_t key; uint8_t fx; } bloom_keys[] = {
 #include "smo_bloom_keys.inc"
 };
 
@@ -2178,16 +2332,21 @@ static uint64_t fnv1a64(const uint8_t *p, uint32_t n) {
     return h;
 }
 
+// The effects switched off (FX_* bits), read once a frame: the rows are live.
 static int bloom_off_on(void) {
     static uint64_t frame = ~0ull;
     static int on;
     uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
-    if (f != frame) frame = f, on = RT_SMO && cfg_bool("TOTK_BLOOM_OFF");   // read once a frame: the row is live
+    if (f != frame)
+        frame = f, on = !RT_SMO ? 0 : (cfg_bool("TOTK_BLOOM_OFF") ? FX_BLOOM : 0) |
+                                      (cfg_bool("TOTK_GLARE_OFF") ? FX_GLARE : 0) |
+                                      (cfg_bool("TOTK_FLARE_OFF") ? FX_FLARE : 0);
     return on;
 }
 
-static int bloom_off_draw(VkExec *ex) {
-    if (!bloom_off_on()) return 0;
+// The effects (FX_* bits) whose seed the bound program's fragment shader is, 0 for any other; kept per program serial.
+static int fx_seed_of(VkExec *ex) {
+    if (!ex->prog) return 0;
     static struct { uint64_t serial; int8_t seed; } memo[256];
     typeof(memo[0]) *m = &memo[ex->prog->serial * 0x9E3779B97F4A7C15ull >> 56];
     if (!ex->prog->serial || m->serial != ex->prog->serial) {
@@ -2199,14 +2358,19 @@ static int bloom_off_draw(VkExec *ex) {
             size_t lo = 0, hi = sizeof bloom_keys / sizeof bloom_keys[0];
             while (lo < hi) {
                 size_t mid = (lo + hi) / 2;
-                if (bloom_keys[mid] < h) lo = mid + 1;
+                if (bloom_keys[mid].key < h) lo = mid + 1;
                 else hi = mid;
             }
-            seed = lo < sizeof bloom_keys / sizeof bloom_keys[0] && bloom_keys[lo] == h;
+            seed = lo < sizeof bloom_keys / sizeof bloom_keys[0] && bloom_keys[lo].key == h ? bloom_keys[lo].fx : 0;
         }
         m->serial = ex->prog->serial, m->seed = (int8_t)seed;
     }
-    if (!m->seed) return 0;
+    return m->seed;
+}
+
+static int bloom_off_draw(VkExec *ex) {
+    int off = bloom_off_on();
+    if (!off || !(fx_seed_of(ex) & off)) return 0;
     VkRect2D sc = vk_exec_scissor(ex);
     for (uint32_t i = 0; i < ex->pass_ncolor && i < 8; i++) {
         if (!ex->color[i].image || !(ex->pipe.chmask.mask >> (4 * i) & 0xf) || ex->pipe.color.blend_en >> i & 1) continue;

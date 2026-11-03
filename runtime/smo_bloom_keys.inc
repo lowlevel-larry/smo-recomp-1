@@ -1,208 +1,209 @@
-// SMO's bloom, glare and lens flare seeds (TOTK_BLOOM_OFF, vk_exec_draw.c bloom_off_draw): FNV-1a 64 of the code of
+// SMO's bloom, glare and lens flare seeds (TOTK_BLOOM_OFF, TOTK_GLARE_OFF, TOTK_FLARE_OFF, vk_exec_draw.c
+// bloom_off_draw), each with the effect it seeds: FNV-1a 64 of the code of
 // every fragment shader of the agl post-effect programs bloom_mask, glare_filter_seed and flare_filter_flare in
 // SystemData/AglResource.szs agl_technique_pfx.sharcb of SMO 1.4.1 (programs and variations read from the package's
 // program table: per program a first shader index, two shaders, vs and fs, per variation). Sorted for bsearch.
-    0x00c0883fcf131192ull,   // bloom_mask
-    0x01d67763de5aac70ull,   // flare_filter_flare
-    0x02c9f0315fa5754bull,   // flare_filter_flare
-    0x02fa01a2049c3752ull,   // bloom_mask
-    0x0599e32c04fe25b5ull,   // bloom_mask
-    0x0747770ff59ed5fbull,   // bloom_mask
-    0x083b3c713021aa0full,   // bloom_mask
-    0x08c18d02f818b9c4ull,   // bloom_mask
-    0x090884be3e5205c1ull,   // bloom_mask
-    0x0e92e964f08245b4ull,   // bloom_mask
-    0x0e95a4b665cfcc83ull,   // glare_filter_seed
-    0x11a7978fc008871aull,   // bloom_mask
-    0x11e14fd228a01446ull,   // bloom_mask
-    0x137380884104a8feull,   // bloom_mask
-    0x16d75f168de2b66bull,   // bloom_mask
-    0x18a8143662203ce9ull,   // bloom_mask
-    0x1b08c758967568eaull,   // bloom_mask
-    0x1b7a2913bf20eefbull,   // bloom_mask
-    0x1c08486993e124beull,   // flare_filter_flare
-    0x1d19f65ed240b690ull,   // bloom_mask
-    0x1f6186ce0ab85de4ull,   // bloom_mask
-    0x1fc0530a462b9cb5ull,   // flare_filter_flare
-    0x2008667396b002f1ull,   // flare_filter_flare
-    0x204fdd750ebf1eb3ull,   // bloom_mask
-    0x20a2e68015863316ull,   // bloom_mask
-    0x213771d37aa515acull,   // bloom_mask
-    0x213ed92b4aceefd9ull,   // bloom_mask
-    0x26a95e9e601180e9ull,   // bloom_mask
-    0x26bf48aec73c0f0eull,   // bloom_mask
-    0x2748743a084ab92aull,   // bloom_mask
-    0x274debb43bd833fcull,   // bloom_mask
-    0x281b6b285ee3cd8cull,   // bloom_mask
-    0x29c80f6fae430e32ull,   // flare_filter_flare
-    0x2a4f98a45ecf4167ull,   // bloom_mask
-    0x2d2360ad3d8e6372ull,   // bloom_mask
-    0x2f0b402ce73955aaull,   // bloom_mask
-    0x2fcb2f7eac14aa17ull,   // bloom_mask
-    0x3071729d87454a61ull,   // bloom_mask
-    0x338758b2bbf72664ull,   // flare_filter_flare
-    0x34bd3461bcbd546cull,   // bloom_mask
-    0x375c589d1f45e83bull,   // bloom_mask
-    0x38d9cc136d83d149ull,   // flare_filter_flare
-    0x3925d29893afb8b6ull,   // flare_filter_flare
-    0x39ee88e795bf8e77ull,   // bloom_mask
-    0x3ac1f21601cdb568ull,   // bloom_mask
-    0x3ac558651a1330f6ull,   // flare_filter_flare
-    0x3b5f7440c4e3229aull,   // bloom_mask
-    0x3cb7435317ecb916ull,   // bloom_mask
-    0x3dddbd683c8f5b9full,   // bloom_mask
-    0x3e0416cc437014c5ull,   // flare_filter_flare
-    0x3e927122af6648e1ull,   // bloom_mask
-    0x4213df51ac004be7ull,   // bloom_mask
-    0x44f556668cf0a366ull,   // bloom_mask
-    0x44fd96fecc9782ffull,   // bloom_mask
-    0x45153d166981af6full,   // bloom_mask
-    0x454bff2fc193d901ull,   // bloom_mask
-    0x464863ed71d196c8ull,   // bloom_mask
-    0x4939c144f080c2e5ull,   // bloom_mask
-    0x4a9bc0131653551bull,   // bloom_mask
-    0x4b991528a4a4fb3dull,   // bloom_mask
-    0x4e3d78dedc5042a3ull,   // bloom_mask
-    0x50f8f694f31298b1ull,   // bloom_mask
-    0x51830d7334c7fa5eull,   // bloom_mask
-    0x5206bf2614d16a3cull,   // bloom_mask
-    0x52fc3c7ec6293d8eull,   // flare_filter_flare
-    0x549d86d57e3ef8eaull,   // flare_filter_flare
-    0x565846b28aa456c4ull,   // flare_filter_flare
-    0x574bf6cef69736aeull,   // flare_filter_flare
-    0x5894fa7adc57713cull,   // bloom_mask
-    0x5ac453db30efbeb8ull,   // bloom_mask
-    0x5b0170fce87c1a24ull,   // bloom_mask
-    0x5cbf9dd973001b3cull,   // flare_filter_flare
-    0x5e65c3ab126dd981ull,   // bloom_mask
-    0x60e7ea8f9ee5ad45ull,   // bloom_mask
-    0x625c24ce1927d077ull,   // bloom_mask
-    0x63064d7df820f6c1ull,   // bloom_mask
-    0x648673a08f2f4abfull,   // flare_filter_flare
-    0x66f17dc420c17146ull,   // bloom_mask
-    0x6b9cc0c2d159921full,   // bloom_mask
-    0x6cd45e3e507be727ull,   // bloom_mask
-    0x6d453260a18db743ull,   // bloom_mask
-    0x6e27dacfa4a4e49cull,   // flare_filter_flare
-    0x6ee170ab89117a74ull,   // bloom_mask
-    0x6f53a1fce6fdfa57ull,   // bloom_mask
-    0x6fa626c081a95cc0ull,   // bloom_mask
-    0x6fbf5ca109c3c759ull,   // bloom_mask
-    0x700941b8c89fd631ull,   // bloom_mask
-    0x7338ff09fc69a6b0ull,   // bloom_mask
-    0x747436edab993b18ull,   // bloom_mask
-    0x765c71e0cd5aae3aull,   // bloom_mask
-    0x77fcd0ca608c99d4ull,   // flare_filter_flare
-    0x7861e1a0175ee63dull,   // flare_filter_flare
-    0x78c696fa382d9bc3ull,   // bloom_mask
-    0x79f8e265164c763aull,   // flare_filter_flare
-    0x7b90e4e17f3f5430ull,   // bloom_mask
-    0x7cdb72d7b93541a0ull,   // bloom_mask
-    0x7d05dc6c4f782bd6ull,   // bloom_mask
-    0x7ef92dd3b3ed2266ull,   // bloom_mask
-    0x822c95ed3548545bull,   // bloom_mask
-    0x829be7c90d1e667eull,   // bloom_mask
-    0x83e1c5b4349af205ull,   // flare_filter_flare
-    0x84469e53491726dbull,   // bloom_mask
-    0x84bacba81786f2b5ull,   // bloom_mask
-    0x8732ee45c39d3ac5ull,   // bloom_mask
-    0x875173c3abdbdaffull,   // bloom_mask
-    0x889956e322f2d924ull,   // bloom_mask
-    0x88a8fecc575bf61cull,   // bloom_mask
-    0x8a020a4d65dc8661ull,   // bloom_mask
-    0x8afd7bff38c169c1ull,   // bloom_mask
-    0x8c83e4be62e641b2ull,   // flare_filter_flare
-    0x8dd3624f91f2c7d1ull,   // flare_filter_flare
-    0x8ef55c55ac5f1620ull,   // bloom_mask
-    0x9144b6a5dd770f01ull,   // bloom_mask
-    0x923358c97d1fd007ull,   // bloom_mask
-    0x92e85c2f033f8a08ull,   // bloom_mask
-    0x933f2295334ac066ull,   // bloom_mask
-    0x955b5da388e5359aull,   // bloom_mask
-    0x965d26a70e5c48acull,   // bloom_mask
-    0x97e2a39dfa659b48ull,   // bloom_mask
-    0x98f122e13676d8e7ull,   // bloom_mask
-    0x9a217db7956bfe87ull,   // bloom_mask
-    0x9d0e520c6ab387f0ull,   // flare_filter_flare
-    0x9db54c05e16cacd2ull,   // bloom_mask
-    0x9e146b38dc1338d6ull,   // bloom_mask
-    0x9e16f7be8a1169e8ull,   // bloom_mask
-    0x9f4f86f9898ffb1bull,   // bloom_mask
-    0x9fd0456f60c311a5ull,   // bloom_mask
-    0xa398bae081d54bd3ull,   // flare_filter_flare
-    0xa3b8b42d5e603978ull,   // bloom_mask
-    0xa7a7534ffc1ad272ull,   // bloom_mask
-    0xacb945dd2de2d0a1ull,   // bloom_mask
-    0xb02a1ac65505baacull,   // flare_filter_flare
-    0xb04cab3060fd0e25ull,   // bloom_mask
-    0xb0f8d6a847a47249ull,   // bloom_mask
-    0xb3cb972fba6adc5full,   // bloom_mask
-    0xb3ef11798507b9e9ull,   // bloom_mask
-    0xb4280c24ec3f8617ull,   // bloom_mask
-    0xb63f5981483576ffull,   // bloom_mask
-    0xb825785e1ed91840ull,   // bloom_mask
-    0xbb6e581855e1ae48ull,   // bloom_mask
-    0xbb7941a0334a9188ull,   // bloom_mask
-    0xbd574d19e467fdb4ull,   // bloom_mask
-    0xbdb06f316e412cecull,   // bloom_mask
-    0xbdd325644a967c2dull,   // flare_filter_flare
-    0xbe4f6d660fb8aab8ull,   // bloom_mask
-    0xbf3009675ca4a79cull,   // bloom_mask
-    0xbff07c5c77fd0df9ull,   // bloom_mask
-    0xc299ad4eb54d00bdull,   // bloom_mask
-    0xc2eeaf86aa01fd18ull,   // bloom_mask
-    0xc785c1fb7169b44cull,   // bloom_mask
-    0xc7ad64ee05097513ull,   // bloom_mask
-    0xc9ae1f0d527e6737ull,   // bloom_mask
-    0xc9b25b52c3e443d5ull,   // flare_filter_flare
-    0xcb4b88eb8f78f6fbull,   // bloom_mask
-    0xcce125eef9655ee4ull,   // bloom_mask
-    0xcf23a9e776834504ull,   // bloom_mask
-    0xd0ef71020d260718ull,   // bloom_mask
-    0xd1e6d2ac80b94f36ull,   // bloom_mask
-    0xd74e1c7bf1afd70dull,   // flare_filter_flare
-    0xd92a4dd5968ed8b5ull,   // bloom_mask
-    0xda1d38a7cf8177b3ull,   // bloom_mask
-    0xda5514a1419ed711ull,   // bloom_mask
-    0xdc21141bb5d2d373ull,   // bloom_mask
-    0xdd916d0ea0413fa4ull,   // bloom_mask
-    0xdf8569df2d78335eull,   // bloom_mask
-    0xe007e7eb5133fa88ull,   // bloom_mask
-    0xe127a77fbd7732a4ull,   // bloom_mask
-    0xe26ed2c481209c89ull,   // bloom_mask
-    0xe48d364b14629973ull,   // bloom_mask
-    0xe4907c155b40e0d5ull,   // bloom_mask
-    0xe4bedb43101f4bbbull,   // bloom_mask
-    0xe572bb2b5cfc32ebull,   // bloom_mask
-    0xea41bd14833ac023ull,   // bloom_mask
-    0xea48be82cc6a785aull,   // bloom_mask
-    0xeababb177bc827aeull,   // bloom_mask
-    0xeb8822dce78ded42ull,   // bloom_mask
-    0xeba6b800d1bf593dull,   // bloom_mask
-    0xec8afb01cf6ae8d4ull,   // bloom_mask
-    0xece8e7752167c4c6ull,   // bloom_mask
-    0xee995f2318211f86ull,   // bloom_mask
-    0xefc3112740cf416full,   // flare_filter_flare
-    0xefc5d1c37503a0e2ull,   // bloom_mask
-    0xf12a77d48dabb082ull,   // bloom_mask
-    0xf13a0c2f391d7e7eull,   // bloom_mask
-    0xf18175b46978fda9ull,   // glare_filter_seed
-    0xf3bedf66ca05a3bcull,   // bloom_mask
-    0xf3c6a08f4f9fc351ull,   // flare_filter_flare
-    0xf3faf6b0065ea5a2ull,   // bloom_mask
-    0xf43d81d49227a502ull,   // bloom_mask
-    0xf4821724948ea5bbull,   // bloom_mask
-    0xf4e1eb09dfd0d86bull,   // bloom_mask
-    0xf5928eb98cb15f67ull,   // bloom_mask
-    0xf7ac094a1f396cafull,   // bloom_mask
-    0xf7c6ee5e28f15731ull,   // bloom_mask
-    0xfa05751d327bea96ull,   // bloom_mask
-    0xfa69720ac136d647ull,   // bloom_mask
-    0xfb1656ff004209eaull,   // flare_filter_flare
-    0xfb5c256a393c8b84ull,   // bloom_mask
-    0xfb7f16681b36860eull,   // bloom_mask
-    0xfbb54605de7f9636ull,   // bloom_mask
-    0xfc00187ff5e873c3ull,   // bloom_mask
-    0xfdec902146ae5f9dull,   // flare_filter_flare
-    0xfefa2067ddcadb20ull,   // bloom_mask
-    0xff74ab2054b95c93ull,   // bloom_mask
+    {0x00c0883fcf131192ull, FX_BLOOM},   // bloom_mask
+    {0x01d67763de5aac70ull, FX_FLARE},   // flare_filter_flare
+    {0x02c9f0315fa5754bull, FX_FLARE},   // flare_filter_flare
+    {0x02fa01a2049c3752ull, FX_BLOOM},   // bloom_mask
+    {0x0599e32c04fe25b5ull, FX_BLOOM},   // bloom_mask
+    {0x0747770ff59ed5fbull, FX_BLOOM},   // bloom_mask
+    {0x083b3c713021aa0full, FX_BLOOM},   // bloom_mask
+    {0x08c18d02f818b9c4ull, FX_BLOOM},   // bloom_mask
+    {0x090884be3e5205c1ull, FX_BLOOM},   // bloom_mask
+    {0x0e92e964f08245b4ull, FX_BLOOM},   // bloom_mask
+    {0x0e95a4b665cfcc83ull, FX_GLARE},   // glare_filter_seed
+    {0x11a7978fc008871aull, FX_BLOOM},   // bloom_mask
+    {0x11e14fd228a01446ull, FX_BLOOM},   // bloom_mask
+    {0x137380884104a8feull, FX_BLOOM},   // bloom_mask
+    {0x16d75f168de2b66bull, FX_BLOOM},   // bloom_mask
+    {0x18a8143662203ce9ull, FX_BLOOM},   // bloom_mask
+    {0x1b08c758967568eaull, FX_BLOOM},   // bloom_mask
+    {0x1b7a2913bf20eefbull, FX_BLOOM},   // bloom_mask
+    {0x1c08486993e124beull, FX_FLARE},   // flare_filter_flare
+    {0x1d19f65ed240b690ull, FX_BLOOM},   // bloom_mask
+    {0x1f6186ce0ab85de4ull, FX_BLOOM},   // bloom_mask
+    {0x1fc0530a462b9cb5ull, FX_FLARE},   // flare_filter_flare
+    {0x2008667396b002f1ull, FX_FLARE},   // flare_filter_flare
+    {0x204fdd750ebf1eb3ull, FX_BLOOM},   // bloom_mask
+    {0x20a2e68015863316ull, FX_BLOOM},   // bloom_mask
+    {0x213771d37aa515acull, FX_BLOOM},   // bloom_mask
+    {0x213ed92b4aceefd9ull, FX_BLOOM},   // bloom_mask
+    {0x26a95e9e601180e9ull, FX_BLOOM},   // bloom_mask
+    {0x26bf48aec73c0f0eull, FX_BLOOM},   // bloom_mask
+    {0x2748743a084ab92aull, FX_BLOOM},   // bloom_mask
+    {0x274debb43bd833fcull, FX_BLOOM},   // bloom_mask
+    {0x281b6b285ee3cd8cull, FX_BLOOM},   // bloom_mask
+    {0x29c80f6fae430e32ull, FX_FLARE},   // flare_filter_flare
+    {0x2a4f98a45ecf4167ull, FX_BLOOM},   // bloom_mask
+    {0x2d2360ad3d8e6372ull, FX_BLOOM},   // bloom_mask
+    {0x2f0b402ce73955aaull, FX_BLOOM},   // bloom_mask
+    {0x2fcb2f7eac14aa17ull, FX_BLOOM},   // bloom_mask
+    {0x3071729d87454a61ull, FX_BLOOM},   // bloom_mask
+    {0x338758b2bbf72664ull, FX_FLARE},   // flare_filter_flare
+    {0x34bd3461bcbd546cull, FX_BLOOM},   // bloom_mask
+    {0x375c589d1f45e83bull, FX_BLOOM},   // bloom_mask
+    {0x38d9cc136d83d149ull, FX_FLARE},   // flare_filter_flare
+    {0x3925d29893afb8b6ull, FX_FLARE},   // flare_filter_flare
+    {0x39ee88e795bf8e77ull, FX_BLOOM},   // bloom_mask
+    {0x3ac1f21601cdb568ull, FX_BLOOM},   // bloom_mask
+    {0x3ac558651a1330f6ull, FX_FLARE},   // flare_filter_flare
+    {0x3b5f7440c4e3229aull, FX_BLOOM},   // bloom_mask
+    {0x3cb7435317ecb916ull, FX_BLOOM},   // bloom_mask
+    {0x3dddbd683c8f5b9full, FX_BLOOM},   // bloom_mask
+    {0x3e0416cc437014c5ull, FX_FLARE},   // flare_filter_flare
+    {0x3e927122af6648e1ull, FX_BLOOM},   // bloom_mask
+    {0x4213df51ac004be7ull, FX_BLOOM},   // bloom_mask
+    {0x44f556668cf0a366ull, FX_BLOOM},   // bloom_mask
+    {0x44fd96fecc9782ffull, FX_BLOOM},   // bloom_mask
+    {0x45153d166981af6full, FX_BLOOM},   // bloom_mask
+    {0x454bff2fc193d901ull, FX_BLOOM},   // bloom_mask
+    {0x464863ed71d196c8ull, FX_BLOOM},   // bloom_mask
+    {0x4939c144f080c2e5ull, FX_BLOOM},   // bloom_mask
+    {0x4a9bc0131653551bull, FX_BLOOM},   // bloom_mask
+    {0x4b991528a4a4fb3dull, FX_BLOOM},   // bloom_mask
+    {0x4e3d78dedc5042a3ull, FX_BLOOM},   // bloom_mask
+    {0x50f8f694f31298b1ull, FX_BLOOM},   // bloom_mask
+    {0x51830d7334c7fa5eull, FX_BLOOM},   // bloom_mask
+    {0x5206bf2614d16a3cull, FX_BLOOM},   // bloom_mask
+    {0x52fc3c7ec6293d8eull, FX_FLARE},   // flare_filter_flare
+    {0x549d86d57e3ef8eaull, FX_FLARE},   // flare_filter_flare
+    {0x565846b28aa456c4ull, FX_FLARE},   // flare_filter_flare
+    {0x574bf6cef69736aeull, FX_FLARE},   // flare_filter_flare
+    {0x5894fa7adc57713cull, FX_BLOOM},   // bloom_mask
+    {0x5ac453db30efbeb8ull, FX_BLOOM},   // bloom_mask
+    {0x5b0170fce87c1a24ull, FX_BLOOM},   // bloom_mask
+    {0x5cbf9dd973001b3cull, FX_FLARE},   // flare_filter_flare
+    {0x5e65c3ab126dd981ull, FX_BLOOM},   // bloom_mask
+    {0x60e7ea8f9ee5ad45ull, FX_BLOOM},   // bloom_mask
+    {0x625c24ce1927d077ull, FX_BLOOM},   // bloom_mask
+    {0x63064d7df820f6c1ull, FX_BLOOM},   // bloom_mask
+    {0x648673a08f2f4abfull, FX_FLARE},   // flare_filter_flare
+    {0x66f17dc420c17146ull, FX_BLOOM},   // bloom_mask
+    {0x6b9cc0c2d159921full, FX_BLOOM},   // bloom_mask
+    {0x6cd45e3e507be727ull, FX_BLOOM},   // bloom_mask
+    {0x6d453260a18db743ull, FX_BLOOM},   // bloom_mask
+    {0x6e27dacfa4a4e49cull, FX_FLARE},   // flare_filter_flare
+    {0x6ee170ab89117a74ull, FX_BLOOM},   // bloom_mask
+    {0x6f53a1fce6fdfa57ull, FX_BLOOM},   // bloom_mask
+    {0x6fa626c081a95cc0ull, FX_BLOOM},   // bloom_mask
+    {0x6fbf5ca109c3c759ull, FX_BLOOM},   // bloom_mask
+    {0x700941b8c89fd631ull, FX_BLOOM},   // bloom_mask
+    {0x7338ff09fc69a6b0ull, FX_BLOOM},   // bloom_mask
+    {0x747436edab993b18ull, FX_BLOOM},   // bloom_mask
+    {0x765c71e0cd5aae3aull, FX_BLOOM},   // bloom_mask
+    {0x77fcd0ca608c99d4ull, FX_FLARE},   // flare_filter_flare
+    {0x7861e1a0175ee63dull, FX_FLARE},   // flare_filter_flare
+    {0x78c696fa382d9bc3ull, FX_BLOOM},   // bloom_mask
+    {0x79f8e265164c763aull, FX_FLARE},   // flare_filter_flare
+    {0x7b90e4e17f3f5430ull, FX_BLOOM},   // bloom_mask
+    {0x7cdb72d7b93541a0ull, FX_BLOOM},   // bloom_mask
+    {0x7d05dc6c4f782bd6ull, FX_BLOOM},   // bloom_mask
+    {0x7ef92dd3b3ed2266ull, FX_BLOOM},   // bloom_mask
+    {0x822c95ed3548545bull, FX_BLOOM},   // bloom_mask
+    {0x829be7c90d1e667eull, FX_BLOOM},   // bloom_mask
+    {0x83e1c5b4349af205ull, FX_FLARE},   // flare_filter_flare
+    {0x84469e53491726dbull, FX_BLOOM},   // bloom_mask
+    {0x84bacba81786f2b5ull, FX_BLOOM},   // bloom_mask
+    {0x8732ee45c39d3ac5ull, FX_BLOOM},   // bloom_mask
+    {0x875173c3abdbdaffull, FX_BLOOM},   // bloom_mask
+    {0x889956e322f2d924ull, FX_BLOOM},   // bloom_mask
+    {0x88a8fecc575bf61cull, FX_BLOOM},   // bloom_mask
+    {0x8a020a4d65dc8661ull, FX_BLOOM},   // bloom_mask
+    {0x8afd7bff38c169c1ull, FX_BLOOM},   // bloom_mask
+    {0x8c83e4be62e641b2ull, FX_FLARE},   // flare_filter_flare
+    {0x8dd3624f91f2c7d1ull, FX_FLARE},   // flare_filter_flare
+    {0x8ef55c55ac5f1620ull, FX_BLOOM},   // bloom_mask
+    {0x9144b6a5dd770f01ull, FX_BLOOM},   // bloom_mask
+    {0x923358c97d1fd007ull, FX_BLOOM},   // bloom_mask
+    {0x92e85c2f033f8a08ull, FX_BLOOM},   // bloom_mask
+    {0x933f2295334ac066ull, FX_BLOOM},   // bloom_mask
+    {0x955b5da388e5359aull, FX_BLOOM},   // bloom_mask
+    {0x965d26a70e5c48acull, FX_BLOOM},   // bloom_mask
+    {0x97e2a39dfa659b48ull, FX_BLOOM},   // bloom_mask
+    {0x98f122e13676d8e7ull, FX_BLOOM},   // bloom_mask
+    {0x9a217db7956bfe87ull, FX_BLOOM},   // bloom_mask
+    {0x9d0e520c6ab387f0ull, FX_FLARE},   // flare_filter_flare
+    {0x9db54c05e16cacd2ull, FX_BLOOM},   // bloom_mask
+    {0x9e146b38dc1338d6ull, FX_BLOOM},   // bloom_mask
+    {0x9e16f7be8a1169e8ull, FX_BLOOM},   // bloom_mask
+    {0x9f4f86f9898ffb1bull, FX_BLOOM},   // bloom_mask
+    {0x9fd0456f60c311a5ull, FX_BLOOM},   // bloom_mask
+    {0xa398bae081d54bd3ull, FX_FLARE},   // flare_filter_flare
+    {0xa3b8b42d5e603978ull, FX_BLOOM},   // bloom_mask
+    {0xa7a7534ffc1ad272ull, FX_BLOOM},   // bloom_mask
+    {0xacb945dd2de2d0a1ull, FX_BLOOM},   // bloom_mask
+    {0xb02a1ac65505baacull, FX_FLARE},   // flare_filter_flare
+    {0xb04cab3060fd0e25ull, FX_BLOOM},   // bloom_mask
+    {0xb0f8d6a847a47249ull, FX_BLOOM},   // bloom_mask
+    {0xb3cb972fba6adc5full, FX_BLOOM},   // bloom_mask
+    {0xb3ef11798507b9e9ull, FX_BLOOM},   // bloom_mask
+    {0xb4280c24ec3f8617ull, FX_BLOOM},   // bloom_mask
+    {0xb63f5981483576ffull, FX_BLOOM},   // bloom_mask
+    {0xb825785e1ed91840ull, FX_BLOOM},   // bloom_mask
+    {0xbb6e581855e1ae48ull, FX_BLOOM},   // bloom_mask
+    {0xbb7941a0334a9188ull, FX_BLOOM},   // bloom_mask
+    {0xbd574d19e467fdb4ull, FX_BLOOM},   // bloom_mask
+    {0xbdb06f316e412cecull, FX_BLOOM},   // bloom_mask
+    {0xbdd325644a967c2dull, FX_FLARE},   // flare_filter_flare
+    {0xbe4f6d660fb8aab8ull, FX_BLOOM},   // bloom_mask
+    {0xbf3009675ca4a79cull, FX_BLOOM},   // bloom_mask
+    {0xbff07c5c77fd0df9ull, FX_BLOOM},   // bloom_mask
+    {0xc299ad4eb54d00bdull, FX_BLOOM},   // bloom_mask
+    {0xc2eeaf86aa01fd18ull, FX_BLOOM},   // bloom_mask
+    {0xc785c1fb7169b44cull, FX_BLOOM},   // bloom_mask
+    {0xc7ad64ee05097513ull, FX_BLOOM},   // bloom_mask
+    {0xc9ae1f0d527e6737ull, FX_BLOOM},   // bloom_mask
+    {0xc9b25b52c3e443d5ull, FX_FLARE},   // flare_filter_flare
+    {0xcb4b88eb8f78f6fbull, FX_BLOOM},   // bloom_mask
+    {0xcce125eef9655ee4ull, FX_BLOOM},   // bloom_mask
+    {0xcf23a9e776834504ull, FX_BLOOM},   // bloom_mask
+    {0xd0ef71020d260718ull, FX_BLOOM},   // bloom_mask
+    {0xd1e6d2ac80b94f36ull, FX_BLOOM},   // bloom_mask
+    {0xd74e1c7bf1afd70dull, FX_FLARE},   // flare_filter_flare
+    {0xd92a4dd5968ed8b5ull, FX_BLOOM},   // bloom_mask
+    {0xda1d38a7cf8177b3ull, FX_BLOOM},   // bloom_mask
+    {0xda5514a1419ed711ull, FX_BLOOM},   // bloom_mask
+    {0xdc21141bb5d2d373ull, FX_BLOOM},   // bloom_mask
+    {0xdd916d0ea0413fa4ull, FX_BLOOM},   // bloom_mask
+    {0xdf8569df2d78335eull, FX_BLOOM},   // bloom_mask
+    {0xe007e7eb5133fa88ull, FX_BLOOM},   // bloom_mask
+    {0xe127a77fbd7732a4ull, FX_BLOOM},   // bloom_mask
+    {0xe26ed2c481209c89ull, FX_BLOOM},   // bloom_mask
+    {0xe48d364b14629973ull, FX_BLOOM},   // bloom_mask
+    {0xe4907c155b40e0d5ull, FX_BLOOM},   // bloom_mask
+    {0xe4bedb43101f4bbbull, FX_BLOOM},   // bloom_mask
+    {0xe572bb2b5cfc32ebull, FX_BLOOM},   // bloom_mask
+    {0xea41bd14833ac023ull, FX_BLOOM},   // bloom_mask
+    {0xea48be82cc6a785aull, FX_BLOOM},   // bloom_mask
+    {0xeababb177bc827aeull, FX_BLOOM},   // bloom_mask
+    {0xeb8822dce78ded42ull, FX_BLOOM},   // bloom_mask
+    {0xeba6b800d1bf593dull, FX_BLOOM},   // bloom_mask
+    {0xec8afb01cf6ae8d4ull, FX_BLOOM},   // bloom_mask
+    {0xece8e7752167c4c6ull, FX_BLOOM},   // bloom_mask
+    {0xee995f2318211f86ull, FX_BLOOM},   // bloom_mask
+    {0xefc3112740cf416full, FX_FLARE},   // flare_filter_flare
+    {0xefc5d1c37503a0e2ull, FX_BLOOM},   // bloom_mask
+    {0xf12a77d48dabb082ull, FX_BLOOM},   // bloom_mask
+    {0xf13a0c2f391d7e7eull, FX_BLOOM},   // bloom_mask
+    {0xf18175b46978fda9ull, FX_GLARE},   // glare_filter_seed
+    {0xf3bedf66ca05a3bcull, FX_BLOOM},   // bloom_mask
+    {0xf3c6a08f4f9fc351ull, FX_FLARE},   // flare_filter_flare
+    {0xf3faf6b0065ea5a2ull, FX_BLOOM},   // bloom_mask
+    {0xf43d81d49227a502ull, FX_BLOOM},   // bloom_mask
+    {0xf4821724948ea5bbull, FX_BLOOM},   // bloom_mask
+    {0xf4e1eb09dfd0d86bull, FX_BLOOM},   // bloom_mask
+    {0xf5928eb98cb15f67ull, FX_BLOOM},   // bloom_mask
+    {0xf7ac094a1f396cafull, FX_BLOOM},   // bloom_mask
+    {0xf7c6ee5e28f15731ull, FX_BLOOM},   // bloom_mask
+    {0xfa05751d327bea96ull, FX_BLOOM},   // bloom_mask
+    {0xfa69720ac136d647ull, FX_BLOOM},   // bloom_mask
+    {0xfb1656ff004209eaull, FX_FLARE},   // flare_filter_flare
+    {0xfb5c256a393c8b84ull, FX_BLOOM},   // bloom_mask
+    {0xfb7f16681b36860eull, FX_BLOOM},   // bloom_mask
+    {0xfbb54605de7f9636ull, FX_BLOOM},   // bloom_mask
+    {0xfc00187ff5e873c3ull, FX_BLOOM},   // bloom_mask
+    {0xfdec902146ae5f9dull, FX_FLARE},   // flare_filter_flare
+    {0xfefa2067ddcadb20ull, FX_BLOOM},   // bloom_mask
+    {0xff74ab2054b95c93ull, FX_BLOOM},   // bloom_mask

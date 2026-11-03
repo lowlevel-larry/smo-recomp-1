@@ -78,7 +78,16 @@ vez), fazia 4–5 blocos em rajada, e o jogo não preenchia o retorno a tempo: l
 (20–30/s em cena cheia, medido com `TOTK_AUDIO_DUMP`). Agora os blocos saem com pelo menos 4 ms entre si
 (`audren.c render_thread`): 1,9/s, o jogador não ouve mais. Também entraram: prefill de 60 ms no SMO (o stream tinha
 xruns com 20 ms), o depop do DSP e `TOTK_AUDIO_DUMP=<arquivo>` (mix float32 antes do clamp).
-**Aberto:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
+**Bloom piscando e quadrado (2026-11-03): é do jogo.** O passe de máscara do bloom (agl bloom_mask, fs
+f529eac42e6c748c) desenha 1/16 da cena (100x56 de 1600x900) com uma amostra por pixel e LOD implícito, e a cena tem um
+nível só: luz pequena distante entra e sai do pixel da máscara. O console faz igual (o usuário confirmou). Melhoria:
+`TOTK_SMOOTH_BLOOM` (padrão ligado, ao vivo, menu "Smooth bloom"): a máscara lê um "mip twin" da cena com a cadeia de
+mips inteira (`vk_exec_draw.c` mtwin_update), e o LOD implícito pega a média. Os interruptores viraram três:
+`TOTK_BLOOM_OFF`, `TOTK_GLARE_OFF`, `TOTK_FLARE_OFF` (cada shader de `smo_bloom_keys.inc` leva o efeito de origem).
+Ainda aberto: um pulo de brilho de 1 frame (+18%) quando o slot de sampler do passe 100x56 -> 50x28 (que lê o nível
+0 e escreve o 1 da mesma textura com `lod 0..0`) vem com `lod 0..14`: o jogo usa o pool de samplers como anel (~6
+registros por frame, slots 257..4095) e a cada ~65-70 frames o anel passa pelo slot. Não confirmado se o console tem.
+**Antes:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
 Brilho piscando, 2026-11-01 (ferramentas NÃO commitadas no working tree: F9 dump `TOTK_DUMP=key`, F6/F7 câmera
 lenta, `TOTK_INVAL_DUMP`, `TOTK_READ_NO_PRESENT_DRAIN`, log de invalidates sob `TOTK_TRACE=gfx` — remover antes do commit):
 é um salto GLOBAL de um frame (tela toda +10–30% de brilho/névoa), quase sempre nos frames em que o jogo invalida as
