@@ -82,8 +82,9 @@ xruns com 20 ms), o depop do DSP e `TOTK_AUDIO_DUMP=<arquivo>` (mix float32 ante
 f529eac42e6c748c) desenha 1/16 da cena (100x56 de 1600x900) com uma amostra por pixel e LOD implícito, e a cena tem um
 nível só: luz pequena distante entra e sai do pixel da máscara. O console faz igual (o usuário confirmou). Melhoria:
 `TOTK_SMOOTH_BLOOM` (padrão ligado, ao vivo, menu "Smooth bloom"): a máscara lê um "mip twin" da cena com a cadeia de
-mips inteira (`vk_exec_draw.c` mtwin_update), e o LOD implícito pega a média. Os interruptores viraram três:
-`TOTK_BLOOM_OFF`, `TOTK_GLARE_OFF`, `TOTK_FLARE_OFF` (cada shader de `smo_bloom_keys.inc` leva o efeito de origem).
+mips inteira (`vk_exec_draw.c` mtwin_update), e o LOD implícito pega a média. É uma intensidade de 0 a 3 (0 = o
+jogo; 2 e 3 = bias de LOD +1 e +2 no sampler). O antigo `TOTK_BLOOM_OFF` saiu; `smo_bloom_keys.inc` (cada shader com
+o efeito de origem) fica para achar a máscara (`fx_seed_of`).
 Ainda aberto: um pulo de brilho de 1 frame (+18%) quando o slot de sampler do passe 100x56 -> 50x28 (que lê o nível
 0 e escreve o 1 da mesma textura com `lod 0..0`) vem com `lod 0..14`: o jogo usa o pool de samplers como anel (~6
 registros por frame, slots 257..4095) e a cada ~65-70 frames o anel passa pelo slot. Não confirmado se o console tem.

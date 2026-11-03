@@ -1520,7 +1520,8 @@ static CubeTwin *ctwin_update(VkExec *ex, const VkTexImage *img) {
 // TOTK_SMOOTH_BLOOM the mask samples a mip twin instead: the scene copied into an image with a full mip chain, each
 // level blitted from the one above, so the implicit LOD picks the level whose texels average what the mask pixel
 // covers. Made again whenever the scene's content generation moved; the copy ends the mask's pass and opens it again.
-// An enhancement over the console, which samples the single level; TOTK_SMOOTH_BLOOM=0 gives the game's picture.
+// An enhancement over the console, which samples the single level. TOTK_SMOOTH_BLOOM is a strength: 0 the game's
+// picture, 1 the level that covers each mask pixel, 2 and 3 one and two levels coarser (a LOD bias on the sampler).
 enum { FX_BLOOM = 1, FX_GLARE = 2, FX_FLARE = 4 };   // smo_bloom_keys.inc: the effect a seed shader belongs to
 static int fx_seed_of(VkExec *ex);
 #define MTWINS 4
@@ -1528,11 +1529,14 @@ typedef struct { VkImage src; uint32_t cgen; VmaAllocation mem; VkTexImage pub; 
 static MipTwin mtwins[MTWINS];
 static unsigned mtwin_next;
 
-static int smooth_bloom_on(void) {
+static int smooth_bloom_on(void) {   // the strength, 0..3
     static uint64_t frame = ~0ull;
     static int on;
     uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
-    if (f != frame) frame = f, on = RT_SMO && cfg_bool("TOTK_SMOOTH_BLOOM");   // read once a frame: the row is live
+    if (f != frame) {   // read once a frame: the row is live
+        frame = f, on = RT_SMO ? cfg_int("TOTK_SMOOTH_BLOOM") : 0;
+        on = on < 0 ? 0 : on > 3 ? 3 : on;
+    }
     return on;
 }
 
@@ -1666,7 +1670,8 @@ static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage,
             return;
         }
     }
-    if (h && !storage && smooth_bloom_on() && (fx_seed_of(ex) & FX_BLOOM)) {   // the bloom mask reads a mip twin
+    int smooth = h && !storage ? smooth_bloom_on() : 0;
+    if (smooth && (fx_seed_of(ex) & FX_BLOOM)) {   // the bloom mask reads a mip twin
         VkImageViewType vt = res_view_type(r->type);
         view_t v;
         int hv;
@@ -1677,6 +1682,14 @@ static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage,
             if (hv) v.set_levels = 0, v.set_layers = 0;
             VkImageView tv = t ? get_view(ex, &t->pub, &v, hv, r->type, 0) : VK_NULL_HANDLE;
             if (tv) out->imageView = tv, out->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            samp_par sp;
+            if (tv && !separate && vk_sampler_params((int)(h >> 20 & 0xfff), &sp)) {   // trilinear, biased by the strength
+                sp.minf = NVN_MIN_FILTER_LINEAR_MIPMAP_LINEAR;
+                sp.lod_bias += (float)(smooth - 1);
+                sp.lod_max = 1000.0f;
+                VkSampler vs = vk_sampler_for(&sp);
+                if (vs) out->sampler = vs;
+            }
         }
     }
     if (!twin_dispatch || storage || separate || !h || !(r->type & 0x400)) return;
@@ -2318,10 +2331,8 @@ static void crumb_draw(VkExec *ex, const GfxShader *vs, const GfxShader *fs, int
     vk_crumb_op_draw(gfx_shader_key(vs), fs ? gfx_shader_key(fs) : NULL, prim, count, &t);
 }
 
-// TOTK_BLOOM_OFF, TOTK_GLARE_OFF, TOTK_FLARE_OFF (SMO, live, one switch per effect): a draw whose fragment shader
-// seeds a switched-off effect (smo_bloom_keys.inc: the bloom, the glare or the lens flare) contributes nothing. One that blends is dropped; one that writes its targets clears what it
-// would write to zero instead, so the blur and compose passes after it read black rather than a stale frame. A hotfix
-// for the flickering glow around lamps and the moon. The verdict is kept per program serial.
+// SMO's bloom, glare and lens flare seed shaders (smo_bloom_keys.inc), each with its effect: TOTK_SMOOTH_BLOOM finds
+// the bloom mask by them.
 static const struct { uint64_t key; uint8_t fx; } bloom_keys[] = {
 #include "smo_bloom_keys.inc"
 };
@@ -2330,18 +2341,6 @@ static uint64_t fnv1a64(const uint8_t *p, uint32_t n) {
     uint64_t h = 0xcbf29ce484222325ull;
     for (uint32_t i = 0; i < n; i++) h = (h ^ p[i]) * 0x100000001b3ull;
     return h;
-}
-
-// The effects switched off (FX_* bits), read once a frame: the rows are live.
-static int bloom_off_on(void) {
-    static uint64_t frame = ~0ull;
-    static int on;
-    uint64_t f = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED);
-    if (f != frame)
-        frame = f, on = !RT_SMO ? 0 : (cfg_bool("TOTK_BLOOM_OFF") ? FX_BLOOM : 0) |
-                                      (cfg_bool("TOTK_GLARE_OFF") ? FX_GLARE : 0) |
-                                      (cfg_bool("TOTK_FLARE_OFF") ? FX_FLARE : 0);
-    return on;
 }
 
 // The effects (FX_* bits) whose seed the bound program's fragment shader is, 0 for any other; kept per program serial.
@@ -2366,21 +2365,6 @@ static int fx_seed_of(VkExec *ex) {
         m->serial = ex->prog->serial, m->seed = (int8_t)seed;
     }
     return m->seed;
-}
-
-static int bloom_off_draw(VkExec *ex) {
-    int off = bloom_off_on();
-    if (!off || !(fx_seed_of(ex) & off)) return 0;
-    VkRect2D sc = vk_exec_scissor(ex);
-    for (uint32_t i = 0; i < ex->pass_ncolor && i < 8; i++) {
-        if (!ex->color[i].image || !(ex->pipe.chmask.mask >> (4 * i) & 0xf) || ex->pipe.color.blend_en >> i & 1) continue;
-        VkClearAttachment a = {VK_IMAGE_ASPECT_COLOR_BIT, i, {.color = {{0, 0, 0, 0}}}};
-        VkClearRect cr = {sc, 0, ex->pass_layers};
-        vkCmdClearAttachments(ex->cb, 1, &a, 1, &cr);
-        ex->recorded++;
-        ex->fb_dirty |= 1u << i;
-    }
-    return 1;
 }
 
 static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
@@ -2428,7 +2412,6 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
         if (fs_wait) fs = shader_for(ex, NVN_STAGE_FS, &has_fs, NULL, 1);
     }
     if (!vs || (has_fs && !fs)) return 0;
-    if (has_fs && bloom_off_draw(ex)) return 0;
     if (vk_crumbs_ops_on()) crumb_draw(ex, vs, fs, prim, count);
     if ((rt_trace & RT_TRACE_GFX) && vk_exec_oq_counting()) {   // the draws an occlusion count is made of, once each
         static uint64_t seen[256];

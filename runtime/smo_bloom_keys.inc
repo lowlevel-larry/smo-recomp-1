@@ -1,5 +1,5 @@
-// SMO's bloom, glare and lens flare seeds (TOTK_BLOOM_OFF, TOTK_GLARE_OFF, TOTK_FLARE_OFF, vk_exec_draw.c
-// bloom_off_draw), each with the effect it seeds: FNV-1a 64 of the code of
+// SMO's bloom, glare and lens flare seeds (vk_exec_draw.c fx_seed_of: TOTK_SMOOTH_BLOOM finds the bloom mask by
+// them), each with the effect it seeds: FNV-1a 64 of the code of
 // every fragment shader of the agl post-effect programs bloom_mask, glare_filter_seed and flare_filter_flare in
 // SystemData/AglResource.szs agl_technique_pfx.sharcb of SMO 1.4.1 (programs and variations read from the package's
 // program table: per program a first shader index, two shaders, vs and fs, per variation). Sorted for bsearch.
