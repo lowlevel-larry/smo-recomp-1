@@ -335,10 +335,7 @@ NVN_API(nvnTextureInvalidateTexels) { (void)c; }
 #define SB(c) (&((samp_builder_t *)arg_p(c, 0))->p)
 // void nvnSamplerBuilderSetDefaults(NVNsamplerBuilder *b): keeps the device; GL defaults. The whole 0x60-byte builder
 // is cleared, not only the part samp_builder_t uses: SMO's sampler cache (agl, main+0x980e20) hashes bytes 8..0x60 of
-// the builder to find a registered sampler with the same state. With stack garbage past our fields the hash changed
-// from call to call (after the stage intro, for one), every lookup missed, the cache registered new samplers until it
-// ran out of slots, and from then on handed out slot 0: unfiltered, unclamped samplers in the bloom chain, blocky
-// bloom that fed back into itself until the screen went white.
+// the builder (nvn_obj.h samp_builder_t), and stack garbage there made identical samplers hash differently.
 NVN_API(nvnSamplerBuilderSetDefaults) {
     samp_builder_t *b = arg_p(c, 0);
     NVNdevice *dev = b->dev;
@@ -351,7 +348,7 @@ NVN_API(nvnSamplerBuilderSetDefaults) {
     o->cmp_func = NVN_COMPARE_FUNC_LESS;
     o->lod_min = -1000.f;
     o->lod_max = 1000.f;
-    o->aniso = 1.f;
+    o->aniso = 1;
 }
 NVN_API(nvnSamplerBuilderSetDevice) { ((samp_builder_t *)arg_p(c, 0))->dev = arg_p(c, 1); }
 NVN_API(nvnSamplerBuilderSetMinMagFilter) {
@@ -378,8 +375,14 @@ NVN_API(nvnSamplerBuilderSetCompare) {
     p->cmp_func = (uint8_t)arg_x(c, 2);
 }
 NVN_API(nvnSamplerBuilderSetBorderColor) { memcpy(SB(c)->border, arg_p(c, 1), 16); }
-NVN_API(nvnSamplerBuilderSetMaxAnisotropy) { SB(c)->aniso = arg_s(c, 0); }
-NVN_API(nvnSamplerBuilderSetLodSnap) { SB(c)->lod_snap = arg_s(c, 0); }   // stored for queries; no host equivalent
+NVN_API(nvnSamplerBuilderSetMaxAnisotropy) {
+    float a = arg_s(c, 0);
+    SB(c)->aniso = (uint8_t)(a >= 16.f ? 16 : a > 1.f ? (int)(a + 0.5f) : 1);
+}
+NVN_API(nvnSamplerBuilderSetLodSnap) {   // stored for queries in 1/255; no host equivalent
+    float v = arg_s(c, 0);
+    SB(c)->lod_snap = (uint8_t)(v <= 0.f ? 0 : v >= 1.f ? 255 : (int)(v * 255.f + 0.5f));
+}
 // void nvnSamplerBuilderGetMinMagFilter(const NVNsamplerBuilder *b, NVNminFilter *min, NVNmagFilter *mag)
 NVN_API(nvnSamplerBuilderGetMinMagFilter) {
     const samp_par *p = SB(c);

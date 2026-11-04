@@ -620,7 +620,7 @@ static void describe_bindings(Str *b, const VkExec *ex, const VkPipeInfo *info) 
                 sp(b, " | samp %d: mag %s min %s (vk min %s mip %s) wrap %s/%s/%s aniso %g lod %g..%g bias %g%s",
                    NVN_HANDLE_SAMP(h), s.magf == 1 ? "L" : "N", mf < 6 ? minn[mf] : "?",
                    mf == 1 || mf == 3 || mf == 5 ? "L" : "N", mf <= 1 ? "none" : mf >= 4 ? "L" : "N",
-                   wrap_name(s.ws), wrap_name(s.wt), wrap_name(s.wr), s.aniso, s.lod_min, s.lod_max, s.lod_bias,
+                   wrap_name(s.ws), wrap_name(s.wt), wrap_name(s.wr), (double)s.aniso, s.lod_min, s.lod_max, s.lod_bias,
                    s.cmp_mode ? " compare" : "");
             } else {
                 sp(b, " | samp %d empty (default sampler)", NVN_HANDLE_SAMP(h));

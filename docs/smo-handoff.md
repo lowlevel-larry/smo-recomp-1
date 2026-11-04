@@ -85,13 +85,15 @@ nível só: luz pequena distante entra e sai do pixel da máscara. O console faz
 mips inteira (`vk_exec_draw.c` mtwin_update), e o LOD implícito pega a média. É uma intensidade de 0 a 3 (0 = o
 jogo; 2 e 3 = bias de LOD +1 e +2 no sampler). O antigo `TOTK_BLOOM_OFF` saiu; `smo_bloom_keys.inc` (cada shader com
 o efeito de origem) fica para achar a máscara (`fx_seed_of`).
-**Bloom quadrado / tela estourando para branco em algumas sessões (corrigido 2026-11-03):**
-`nvnSamplerBuilderSetDefaults` zerava só os 52 bytes de `samp_builder_t`, e o cache de samplers do agl
-(main+0x980e20) faz hash dos bytes 8..0x60 do builder. O lixo da pilha (dependia do que rodou antes: assistir a intro
-da fase quebrava, pular não) mudava o hash, o cache nunca acertava, registrava ~40 samplers por frame até esgotar os
-slots e então devolvia o slot 0 (`f_7000980e20` devolve 0 com o anel cheio): a cadeia do bloom ficava sem filtro e sem
-clamp de LOD, lia o nível que escrevia e realimentava até estourar. Agora o builder inteiro (0x60) é zerado. O pulo de
-brilho de 1 frame (o slot do passe 100x56 -> 50x28 vindo com `lod 0..14`) era o anel girando rápido pelo mesmo motivo.
+**Bloom piscando, quadrado e tela estourando para branco (corrigido 2026-11-03):** o cache de samplers do agl
+(main+0x980e20) guarda cópias de NVNsamplerBuilder (0x60 bytes), registra essas cópias como samplers, faz hash dos
+bytes 8..0x60 e confirma com `nvnSamplerCompare`. Três erros nossos: (1) `nvnSamplerBuilderSetDefaults` só zerava
+52 bytes (lixo da pilha no hash); (2) os parâmetros ficavam no offset 8 do builder e 4 do sampler, então o Compare
+nunca dava igual; (3) com os parâmetros no offset 0 os filtros saíam do hash e nearest/linear colidiam. O cache errava,
+registrava o mesmo sampler ~17 vezes por frame, o anel de slots passava por cima de slots que comandos gravados ainda
+usavam (piscadas de 1 frame) e, cheio, devolvia o slot 0 (bloom quadrado e realimentação até o branco; assistir a
+intro da fase quebrava, pular não). Agora builder e sampler têm os parâmetros no offset 8 (`samp_par` compactado para
+40 bytes: aniso e lod_snap em 1 byte) e o builder inteiro é zerado. Numa fase: ~21 registros em 600 frames.
 **Antes:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
 Brilho piscando, 2026-11-01 (ferramentas NÃO commitadas no working tree: F9 dump `TOTK_DUMP=key`, F6/F7 câmera
 lenta, `TOTK_INVAL_DUMP`, `TOTK_READ_NO_PRESENT_DRAIN`, log de invalidates sob `TOTK_TRACE=gfx` — remover antes do commit):

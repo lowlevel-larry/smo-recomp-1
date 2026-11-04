@@ -1650,7 +1650,7 @@ static VkSampler make_sampler(VkCtx *c, const samp_par *d) {
     si.mipLodBias = fmaxf(-lim, fminf(lim, d->lod_bias));
     if (d->aniso > 1) {
         si.anisotropyEnable = VK_TRUE;
-        si.maxAnisotropy = fminf(d->aniso, c->props.limits.maxSamplerAnisotropy);
+        si.maxAnisotropy = fminf((float)d->aniso, c->props.limits.maxSamplerAnisotropy);
     }
     if (d->cmp_mode) {
         si.compareEnable = VK_TRUE;
@@ -1758,7 +1758,7 @@ VkSampler vk_sampler_sharp_by_id_locked(int id) {
     SampSlot *s = &sslots[id];
     if (!s->ss) {
         samp_par k = s->p;
-        if (k.minf > NVN_MIN_FILTER_LINEAR && !k.cmp_mode) k.lod_bias -= 1.0f, k.aniso = 16.0f;
+        if (k.minf > NVN_MIN_FILTER_LINEAR && !k.cmp_mode) k.lod_bias -= 1.0f, k.aniso = 16;
         s->ss = sampler_for(c, &k);
     }
     return s->ss;

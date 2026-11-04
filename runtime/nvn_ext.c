@@ -251,8 +251,8 @@ NVN_API(nvnSamplerBuilderGetCompare) { compare(c, sbp_of(c)); }
 NVN_API(nvnSamplerBuilderGetBorderColor) { border_f(c, sbp_of(c)); }
 NVN_API(nvnSamplerBuilderGetBorderColori) { border_i(c, sbp_of(c)); }
 NVN_API(nvnSamplerBuilderGetBorderColorui) { border_ui(c, sbp_of(c)); }
-NVN_API(nvnSamplerBuilderGetMaxAnisotropy) { ret_s(c, sbp_of(c)->aniso); }
-NVN_API(nvnSamplerBuilderGetLodSnap) { ret_s(c, sbp_of(c)->lod_snap); }
+NVN_API(nvnSamplerBuilderGetMaxAnisotropy) { ret_s(c, (float)sbp_of(c)->aniso); }
+NVN_API(nvnSamplerBuilderGetLodSnap) { ret_s(c, sbp_of(c)->lod_snap / 255.f); }
 // void nvnSamplerGetMinMagFilter(const NVNsampler *s, NVNminFilter *min, NVNmagFilter *mag)
 NVN_API(nvnSamplerGetMinMagFilter) {
     const samp_par *p = sp_of(c);
@@ -272,7 +272,7 @@ NVN_API(nvnSamplerGetCompare) { compare(c, sp_of(c)); }
 NVN_API(nvnSamplerGetBorderColor) { border_f(c, sp_of(c)); }
 NVN_API(nvnSamplerGetBorderColori) { border_i(c, sp_of(c)); }
 NVN_API(nvnSamplerGetBorderColorui) { border_ui(c, sp_of(c)); }
-NVN_API(nvnSamplerGetMaxAnisotropy) { ret_s(c, sp_of(c)->aniso); }
+NVN_API(nvnSamplerGetMaxAnisotropy) { ret_s(c, (float)sp_of(c)->aniso); }
 // NVNboolean nvnSamplerCompare(const NVNsampler *a, const NVNsampler *b)
 NVN_API(nvnSamplerCompare) { ret_x(c, !memcmp(sp_of(c), &((const samp_t *)arg_p(c, 1))->p, sizeof(samp_par))); }
 // uint64_t nvnSamplerGetDebugID(const NVNsampler *s)
