@@ -94,6 +94,10 @@ registrava o mesmo sampler ~17 vezes por frame, o anel de slots passava por cima
 usavam (piscadas de 1 frame) e, cheio, devolvia o slot 0 (bloom quadrado e realimentação até o branco; assistir a
 intro da fase quebrava, pular não). Agora builder e sampler têm os parâmetros no offset 8 (`samp_par` compactado para
 40 bytes: aniso e lod_snap em 1 byte) e o builder inteiro é zerado. Numa fase: ~21 registros em 600 frames.
+PR para o TotK (pendente): branch `sampler-layout` em lowlevel-larry/totk-pc-recomp (98c397b + a69535c). O TotK 1.4.3
+com ela passa as probes mas crasha no boot (leitura nula em `f_7000be02a8`, depois da chamada que volta em
+main+0xbe0524). Devolver o ponteiro do device ao offset 0 do builder não resolveu. Ver o que o TotK lê do sampler ou do
+builder ali antes de abrir a PR.
 **Antes:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
 Brilho piscando, 2026-11-01 (ferramentas NÃO commitadas no working tree: F9 dump `TOTK_DUMP=key`, F6/F7 câmera
 lenta, `TOTK_INVAL_DUMP`, `TOTK_READ_NO_PRESENT_DRAIN`, log de invalidates sob `TOTK_TRACE=gfx` — remover antes do commit):
