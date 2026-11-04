@@ -333,11 +333,16 @@ NVN_API(nvnTextureInvalidateTexels) { (void)c; }
 
 // ---------- Samplers
 #define SB(c) (&((samp_builder_t *)arg_p(c, 0))->p)
-// void nvnSamplerBuilderSetDefaults(NVNsamplerBuilder *b): keeps the device; GL defaults
+// void nvnSamplerBuilderSetDefaults(NVNsamplerBuilder *b): keeps the device; GL defaults. The whole 0x60-byte builder
+// is cleared, not only the part samp_builder_t uses: SMO's sampler cache (agl, main+0x980e20) hashes bytes 8..0x60 of
+// the builder to find a registered sampler with the same state. With stack garbage past our fields the hash changed
+// from call to call (after the stage intro, for one), every lookup missed, the cache registered new samplers until it
+// ran out of slots, and from then on handed out slot 0: unfiltered, unclamped samplers in the bloom chain, blocky
+// bloom that fed back into itself until the screen went white.
 NVN_API(nvnSamplerBuilderSetDefaults) {
     samp_builder_t *b = arg_p(c, 0);
     NVNdevice *dev = b->dev;
-    memset(b, 0, sizeof *b);
+    memset(b, 0, sizeof(NVNsamplerBuilder));
     b->dev = dev;
     samp_par *o = &b->p;
     o->minf = NVN_MIN_FILTER_NEAREST_MIPMAP_LINEAR;

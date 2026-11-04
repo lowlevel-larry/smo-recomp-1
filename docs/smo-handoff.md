@@ -85,9 +85,13 @@ nível só: luz pequena distante entra e sai do pixel da máscara. O console faz
 mips inteira (`vk_exec_draw.c` mtwin_update), e o LOD implícito pega a média. É uma intensidade de 0 a 3 (0 = o
 jogo; 2 e 3 = bias de LOD +1 e +2 no sampler). O antigo `TOTK_BLOOM_OFF` saiu; `smo_bloom_keys.inc` (cada shader com
 o efeito de origem) fica para achar a máscara (`fx_seed_of`).
-Ainda aberto: um pulo de brilho de 1 frame (+18%) quando o slot de sampler do passe 100x56 -> 50x28 (que lê o nível
-0 e escreve o 1 da mesma textura com `lod 0..0`) vem com `lod 0..14`: o jogo usa o pool de samplers como anel (~6
-registros por frame, slots 257..4095) e a cada ~65-70 frames o anel passa pelo slot. Não confirmado se o console tem.
+**Bloom quadrado / tela estourando para branco em algumas sessões (corrigido 2026-11-03):**
+`nvnSamplerBuilderSetDefaults` zerava só os 52 bytes de `samp_builder_t`, e o cache de samplers do agl
+(main+0x980e20) faz hash dos bytes 8..0x60 do builder. O lixo da pilha (dependia do que rodou antes: assistir a intro
+da fase quebrava, pular não) mudava o hash, o cache nunca acertava, registrava ~40 samplers por frame até esgotar os
+slots e então devolvia o slot 0 (`f_7000980e20` devolve 0 com o anel cheio): a cadeia do bloom ficava sem filtro e sem
+clamp de LOD, lia o nível que escrevia e realimentava até estourar. Agora o builder inteiro (0x60) é zerado. O pulo de
+brilho de 1 frame (o slot do passe 100x56 -> 50x28 vindo com `lod 0..14`) era o anel girando rápido pelo mesmo motivo.
 **Antes:** brilho (bloom) das luzes piscando. FMZ descartado (2 de 858.551 FMUL/FFMA nos shaders do SMO).
 Brilho piscando, 2026-11-01 (ferramentas NÃO commitadas no working tree: F9 dump `TOTK_DUMP=key`, F6/F7 câmera
 lenta, `TOTK_INVAL_DUMP`, `TOTK_READ_NO_PRESENT_DRAIN`, log de invalidates sob `TOTK_TRACE=gfx` — remover antes do commit):
