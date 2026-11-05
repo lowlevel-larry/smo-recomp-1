@@ -376,6 +376,7 @@ static void dummies_init(void) {
 
 static void twins_release(VkCtx *c);
 static void ctwins_release(VkCtx *c);
+static void ltwins_release(VkCtx *c);
 static void mtwins_release(VkCtx *c);
 
 // Releases the stand-ins and the depth and cube twins. The device must be idle; the game path leaves them to process exit like
@@ -385,6 +386,7 @@ void vk_exec_draw_shutdown(void) {
     VkCtx *c = vk_ctx();
     twins_release(c);
     ctwins_release(c);
+    ltwins_release(c);
     mtwins_release(c);
     for (int i = 0; i < DV_COUNT; i++) {
         if (Z.img[i].sview != Z.img[i].view) vkDestroyImageView(c->device, Z.img[i].sview, NULL);
@@ -576,11 +578,13 @@ VkImageView vk_exec_target_view(const VkTexImage *img, VkFormat format, VkImageV
 }
 
 static void ctwins_source_gone(VkImage image);
+static void ltwins_source_gone(VkImage image);
 static void mtwins_source_gone(VkImage image);
 
 void vk_exec_image_gone(VkImage image) {
     vk_exec_bc_gone(image);
     ctwins_source_gone(image);
+    ltwins_source_gone(image);
     mtwins_source_gone(image);
     if (!views_by_image.klen) return;
     for (ViewNode *n = nvn_hm_del(&views_by_image, &image), *next; n; n = next) {
@@ -1513,6 +1517,119 @@ static CubeTwin *ctwin_update(VkExec *ex, const VkTexImage *img) {
     return t;
 }
 
+// ---- line twins: 1D textures sampled as 2D
+// A Maxwell shader may sample a 1D texture through a 2D sampler: the texture is one row, so every y reads it. Vulkan has
+// no 2D view of a 1D image, and get_view gave the draw the black stand-in. SMO's Lake Kingdom water builds its wave
+// spectrum from a 256x1 rgba16f table read that way; with zeros the spectrum's logarithms went infinite, the FFT passes
+// filled with NaN and the water surface vanished. The 1D image gets a line twin instead: a 2D image of the same format,
+// width, levels and layers with height 1, blitted from the 1D image (NEAREST at equal size: the texels as they are) on
+// its first 2D sampling and again whenever the source's content generation moved. As for cube twins, the blit ends an
+// open pass and opens it again. TOTK_LINE_TWIN=0: off (the stand-in, as before).
+#define LTWINS 8
+typedef struct { VkImage src; uint32_t cgen; VmaAllocation mem; VkTexImage pub; } LineTwin;
+static LineTwin ltwins[LTWINS];
+static unsigned ltwin_next;
+
+static void ltwin_drop(LineTwin *t) {   // texture lock held
+    if (!t->pub.image) return;
+    vk_exec_image_gone(t->pub.image);
+    CubeTwinGone *g = malloc(sizeof *g);
+    if (!g) rt_fatal("vk: out of memory (line twin)");
+    *g = (CubeTwinGone){t->pub.image, t->mem};
+    vk_completion_add(vk_sync_issued() + 1, ctwin_free, g);
+    *t = (LineTwin){0};
+}
+
+static void ltwins_source_gone(VkImage image) {
+    for (int i = 0; i < LTWINS; i++)
+        if (ltwins[i].src == image) ltwin_drop(&ltwins[i]);
+}
+
+static void ltwins_release(VkCtx *c) {   // shutdown, device idle
+    for (int i = 0; i < LTWINS; i++)
+        if (ltwins[i].pub.image) vmaDestroyImage(c->vma, ltwins[i].pub.image, ltwins[i].mem);
+    memset(ltwins, 0, sizeof ltwins);
+}
+
+// Whether img is a 1D image whose format the driver blits both ways (the twin is made by a blit).
+static int ltwin_wanted(const VkTexImage *img) {
+    static int on = -1;
+    if (on < 0) on = rt_knob("LINE_TWIN", "1");
+    if (!on || img->type != VK_IMAGE_TYPE_1D || img->samples != 1 || img->aspect != VK_IMAGE_ASPECT_COLOR_BIT) return 0;
+    VkFormatProperties fp;
+    vkGetPhysicalDeviceFormatProperties(vk_ctx()->phys, img->format, &fp);
+    VkFormatFeatureFlags need = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+    return (fp.optimalTilingFeatures & need) == need;
+}
+
+// The twin of img holding img's current texels, the blit recorded into ex->cb when needed; NULL when it cannot be
+// made. Texture lock held.
+static LineTwin *ltwin_update(VkExec *ex, const VkTexImage *img) {
+    VkCtx *c = vk_ctx();
+    LineTwin *t = NULL;
+    for (int i = 0; i < LTWINS && !t; i++)
+        if (ltwins[i].src == img->image && ltwins[i].pub.format == img->format && ltwins[i].pub.width == img->width &&
+            ltwins[i].pub.levels == img->levels && ltwins[i].pub.layers == img->layers)
+            t = &ltwins[i];
+    int fresh = !t;
+    if (!t) {
+        t = &ltwins[ltwin_next++ % LTWINS];
+        ltwin_drop(t);
+        VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D,
+                                .format = img->format, .extent = {img->width, 1, 1}, .mipLevels = img->levels,
+                                .arrayLayers = img->layers, .samples = VK_SAMPLE_COUNT_1_BIT,
+                                .tiling = VK_IMAGE_TILING_OPTIMAL,
+                                .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+        VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+        VkImage im;
+        if (vmaCreateImage(c->vma, &ci, &ai, &im, &t->mem, NULL) != VK_SUCCESS) {
+            *t = (LineTwin){0};
+            return NULL;
+        }
+        t->src = img->image;
+        t->pub = *img;
+        t->pub.image = im;
+        t->pub.type = VK_IMAGE_TYPE_2D;
+        t->pub.height = 1;
+        t->pub.view_type = img->layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+        t->pub.usage = ci.usage;
+        t->pub.block_views = 0, t->pub.fb_usage = 0, t->pub.fb_learned = 0, t->pub.bound = 0;
+        static int nlog;
+        if (nlog++ < 8)
+            rt_log("vk_exec: line twin %u wide, %u levels, %u layers, format %d, for a 1D texture sampled as 2D",
+                   img->width, img->levels, img->layers, (int)img->format);
+    }
+    if (!fresh && t->cgen == img->cgen) return t;
+    t->cgen = img->cgen;
+    int reopen = ex->in_pass;
+    vk_exec_barrier(ex);   // ends the pass; the source's earlier writes and the twin's earlier readers come first
+    VkImageMemoryBarrier2 ib = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                .dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT, .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                .image = t->pub.image,
+                                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, img->levels, 0, img->layers}};
+    VkDependencyInfo d0 = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1,
+                           .pImageMemoryBarriers = &ib};
+    vkCmdPipelineBarrier2(ex->cb, &d0);   // every texel is written: the old ones are dropped
+    VkImageBlit rg[16];
+    uint32_t n = img->levels < 16 ? img->levels : 16;
+    for (uint32_t l = 0; l < n; l++) {
+        int32_t w = (int32_t)(img->width >> l ? img->width >> l : 1);
+        rg[l] = (VkImageBlit){.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, img->layers},
+                              .srcOffsets = {{0, 0, 0}, {w, 1, 1}},
+                              .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, img->layers},
+                              .dstOffsets = {{0, 0, 0}, {w, 1, 1}}};
+    }
+    vkCmdBlitImage(ex->cb, img->image, VK_IMAGE_LAYOUT_GENERAL, t->pub.image, VK_IMAGE_LAYOUT_GENERAL, n, rg,
+                   VK_FILTER_NEAREST);
+    ex->recorded += 2;
+    vk_exec_barrier(ex);   // the blit before the draws that sample the twin and the source's next writers
+    if (reopen) vk_exec_pass_begin(ex);
+    return t;
+}
+
 // ---- mip twins: SMO's bloom mask reads a mipmapped copy of the scene (TOTK_SMOOTH_BLOOM)
 // SMO's bloom mask (agl bloom_mask) draws a target 1/16 the scene's size and samples the scene once per pixel with an
 // implicit LOD. The scene has one level, so each mask pixel is a bilinear tap of four scene pixels: a small bright
@@ -1686,6 +1803,17 @@ static void tex_info(VkExec *ex, const GfxShaderRes *r, uint64_t h, int storage,
             VkImageView tv = t ? get_view(ex, &t->pub, &v, hv, r->type, 0) : VK_NULL_HANDLE;
             if (tv) out->imageView = tv, out->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             return;
+        }
+        if (vt == VK_IMAGE_VIEW_TYPE_2D || vt == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {   // a 1D texture sampled as 2D reads its line twin
+            view_t v;
+            int hv;
+            const VkTexImage *img = vk_texture_by_id_locked((int)(h & 0xfffff), &v, &hv);
+            if (img && img->type == VK_IMAGE_TYPE_1D) {
+                LineTwin *t = ltwin_wanted(img) ? ltwin_update(ex, img) : NULL;
+                VkImageView tv = t ? get_view(ex, &t->pub, &v, hv, r->type, 0) : VK_NULL_HANDLE;
+                if (tv) out->imageView = tv, out->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                return;
+            }
         }
     }
     int smooth = h && !storage ? smooth_bloom_on() : 0;
