@@ -166,3 +166,7 @@ Também: `gfx_shader_await` usava a seção de controle crua para a chave (no SM
 o job e pulava draws de passes únicos com "failed to translate" sem falha do tradutor.
 Backports do TotK 2026-11-05: patches do tradutor 0012/0013/0016 (variáveis locais zeradas no Mesa), merge de escrita
 de SSBO palavra a palavra, flushes exatos do pool, fila de quadros (`frame_queue`), slot de textura por formato.
+Ferramentas de diagnóstico novas, sem commit no working tree: TOTK_POKE `skipfs <hash>...` (pula ao vivo os draws com
+esses fragment shaders, hashes do vk_dump; isola um efeito sem reiniciar), linhas `state:`/`vattr:` por pipeline no
+passes.txt e TOTK_DUMP_TEX copiando todos os níveis e camadas. As linhas em X no céu de Steam Gardens (Wooded Kingdom)
+são a armação da cúpula de vidro (prog do fs 63d9a59585395230): é do jogo, não bug.
