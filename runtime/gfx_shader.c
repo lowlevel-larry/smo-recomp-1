@@ -1528,8 +1528,11 @@ const GfxShader *gfx_shader_await(int stage, const uint8_t *control, const uint8
                                   const GfxShaderAnswers *a) {
     int pending;
     const GfxShader *s = gfx_shader_get_async(stage, control, code, code_size, a, &pending);
+    // The key the job was queued under comes from the control section as gfx_shader_get_async sees it: SMO's shorter
+    // section has the bytes past its end zeroed (control_view), and a key from the raw section names no job.
+    uint8_t view[CONTROL_SIZE];
     Req r;
-    if (!pending || !req_init(&r, stage, control, code, code_size, NULL, a)) return s;
+    if (!pending || !req_init(&r, stage, control_view(control, view), code, code_size, NULL, a)) return s;
     uint64_t p0 = perf_begin();   // the wait counts as the render thread's translation time
     plat_mutex_lock(&X.lock);
     for (XJob *j = X.head, *prev = NULL; j; prev = j, j = j->next)
