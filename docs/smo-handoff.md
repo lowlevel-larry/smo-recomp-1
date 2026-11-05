@@ -153,3 +153,16 @@ tamanho, níveis e camadas, copiada do array na primeira leitura como cubo e de 
 13.200 frames foram 10 cópias, todas em cargas de área. TOTK_CUBE_TWIN=0 desliga.
 Ferramentas de diagnóstico (sem commit, no working tree): TOTK_POKE (find/peek/hold/dump/dumplog ao vivo),
 TOTK_DUMP_LOG_CUBES, TOTK_OCCLUSION_VISIBLE, TOTK_WATCH, o log de registro de cubemaps.
+
+## Água do Lake Kingdom invisível (resolvido, 2026-11-05)
+Sintoma: a superfície do lago não aparecia vista de fora (embaixo d'água os efeitos apareciam).
+Causa: a água é uma simulação FFT. Na carga da fase, o passe do espectro (prog 23980, fs 24280fae189101b5) lê uma
+tabela rgba16f 256x1 que é imagem 1D por um sampler 2D. `vk_exec_draw.c get_view` não tem vista 2D de imagem 1D e dava
+a textura substituta preta; com zeros o espectro ia ao infinito e os passes 64x64 rgba16f da FFT saíam com NaN.
+Correção: "line twin" (`vk_exec_draw.c ltwin_update`), imagem 2D de altura 1 copiada por blit NEAREST, refeita quando o
+`cgen` da fonte muda. TOTK_LINE_TWIN=0 desliga. Achado com `TOTK_DUMP_LOG=1 TOTK_DUMP_LOG_TEXELS=1` desde o boot (só
+texto) e `dump` no TOTK_POKE ao chegar no lago: só um dump por execução.
+Também: `gfx_shader_await` usava a seção de controle crua para a chave (no SMO os bytes após 0x7d1 são lixo), não achava
+o job e pulava draws de passes únicos com "failed to translate" sem falha do tradutor.
+Backports do TotK 2026-11-05: patches do tradutor 0012/0013/0016 (variáveis locais zeradas no Mesa), merge de escrita
+de SSBO palavra a palavra, flushes exatos do pool, fila de quadros (`frame_queue`), slot de textura por formato.
