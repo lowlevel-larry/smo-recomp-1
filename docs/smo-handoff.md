@@ -162,6 +162,19 @@ Windows por diferença de escalonamento de thread do host vs. Linux; não reprod
 pista: `TOTK_TRACE=sched` nesse trecho do boot para ver o que as threads do jogo fazem por volta do frame em que
 a janela ganha foco; ou reduzir `TOTK_ASYNC_PREEMPT`/afinidade de CPU para forçar o timing e tentar reproduzir.
 
+**Crash logo na primeira cutscene (corrigido 2026-11-06, não testado em jogo de verdade ainda):** abort em
+`nn::diag::detail::VAbortImpl`, com uma pilha de exceção secundária quebrada tentando montar o backtrace
+(`GetExceptionInfo` lê 4 bytes além do fim de `subsdk0`). A causa real está mais embaixo na pilha: `NvOsDrvOpen` /
+`NvRmChannelOpen` / `NvMMLiteOpenBlock` — o caminho do decodificador de vídeo real do Switch (NVDEC via NvRm), que
+`ov_movie.c` deveria interceptar para H.264 mas não interceptava no Windows: `h264_available()` só tentava `dlopen`
+(`#ifndef _WIN32`), então no Windows sempre retornava indisponível e todo vídeo H.264 (os `MovieData/*.mp4` do SMO;
+o VP9 `.webm` do TotK não passa por aqui) caía na biblioteca, que abre o NVDEC de verdade e aborta. Corrigido:
+`h264_available()` agora usa `plat_lib_open`/`plat_lib_sym` (já existentes em `runtime/platform/`) e procura
+`openh264.dll` ao lado do exe no Windows; `tools/fetch_openh264.py` baixa o binário oficial pré-compilado da Cisco
+(gratuito para redistribuir e rodar, mesma solução do Firefox/Chromium — o código-fonte é BSD mas o binário cobre os
+royalties de patente do H.264). Build limpo, DLL carrega (974.944 bytes). Não confirmado em jogo de verdade ainda:
+é preciso navegar o menu manualmente até a primeira cutscene para validar.
+
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
 2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
