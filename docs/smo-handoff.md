@@ -125,6 +125,28 @@ desenhado. `TOTK_PIPE_SKIP=none` não muda. Próximo: despejar o cbuf/vertex buf
 `nvnp_nvnCommandBufferBindUniformBuffer`/`BindVertexBuffer`, ou `TOTK_DUMP_BUF`) e ver se é snapshot de memória
 (vk_usnap) ou layout de binding do SDK 7.
 
+## Windows (primeiro build, 2026-11-05)
+Toolchain (MSYS2 UCRT64, VS Build Tools 2022 C++, .NET SDK 10, Vulkan SDK 1.4.363, uv) instalada e verificada numa
+máquina com AMD Ryzen 5 5600G (AVX2 ok) + NVIDIA RTX 4060. Passos de `docs/building.md` seguidos sem adaptação:
+`fetch_refs.sh` (via shell MSYS2), `build_hactool.py`, extração (`smo_extract.py`, hashes batem com
+`smo-expected-v1.4.1.json`), lift (`recomp/gen.py`, 102.327 funções, 0 unsupported), `build_xlate.py` e
+`build_game.py` compilam e linkam `smo.exe` sem erro. `smo.exe --selftest` passa (0 falhas).
+
+`tools/prepare_shaders.py` falha no Windows (`KeyError: 'Pack/ZsDic.pack.zs'` em `shader_census.py inventory`): o
+caminho é o mesmo do Linux, não deveria depender de SO; provavelmente um problema preexistente do census com o SMO
+que o Linux não exercitou nessa borda, ou um RomFS build diferente. Não investigado.
+
+**Crash no boot, antes da tela de título:** access violation determinístico lendo o endereço 0x98 (ponteiro quase
+nulo) em `f_70007488f0` (`main+0x7488f0`), chamada por `main+0x6386bc`. Pilha completa:
+`main+0x6386bc <- main+0x638510 <- main+0x4e1888 <- main+0x4e5958 <- main+0x948498 <- main+0x9484b0 (x2) <-
+main+0x948444 <- main+0x6253c4 <- main+0x941d90 <- main+0x942f64 <- main+0x4bf674 <- host`.
+Acontece pouco depois de `nn::socket::Initialize`/`nn::ssl::Initialize`/`SubmitNetworkRequest` no log (essas três
+rodam como no-ops em `smo_ov_network.c`, aparentam corretas), antes de chegar a qualquer chamada NVN. Não é
+`TOTK_ASYNC_PREEMPT`. Não investigado a fundo: precisa desassemblar `main+0x7488f0` (ou achar a função guest
+correspondente) para saber o que deveria estar no objeto lido em offset 0x98 e por que está nulo no Windows e não
+no Linux (layout de memória do loader, GetWriteWatch vs userfaultfd, ou algo real do caminho de boot específico do
+Windows ainda não exercitado).
+
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
 2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
