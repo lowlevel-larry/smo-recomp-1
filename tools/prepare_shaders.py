@@ -54,8 +54,11 @@ def inventory_for(version, romfs, exefs, everything=True):
     shape (shaders dict, rejected count) and the record layout this script writes are otherwise the same.
     smo_shader_census.inventory has no default for everything, unlike shader_census.inventory, hence this wrapper."""
     if version.startswith('smo'):
+        # Always every shader directory: SMO has no list rows to pick shaders by, its startup directories alone hold
+        # ~21,700 shaders (enough to skip the fallback walk below), and the effects of EffectData/ (6,240) are met in
+        # play like the materials are. The whole walk takes about 15 s.
         import smo_shader_census
-        return smo_shader_census.inventory(romfs, exefs, everything)
+        return smo_shader_census.inventory(romfs, exefs, True)
     return totk_inventory(romfs, exefs, everything)
 
 STAGES = {'vs': 0, 'ps': 4, 'cs': 5}                       # runtime/gfx.h GFX_STAGE_*
@@ -68,6 +71,7 @@ FMT = [None, 'R8Unorm', 'R8Snorm', 'R8Uint', 'R8Sint', 'R16Float', 'R16Unorm', '
        'R10G10B10A2Unorm', 'R10G10B10A2Uint', 'R11G11B10Float']   # gfx_shader.c fmt_names
 TYPES = {'float': 0, 'sint': 1, 'uint': 2}
 DEFAULT = {'tex': {str(slot): '2d' for slot in range(32)}}   # answers outside a shader's use mask are dropped
+SMO_ATTR11_UINT = {**DEFAULT, 'attr': {'11': 'uint'}}       # SMO's other common vertex shader variant (main)
 CONTROL = 0x880
 ANS_REC = 4 + 32 + 32 + 147 + 1
 JOURNAL = 'shader-prepare-journal.bin'   # vk_pipeline.c skip_init: a 64-byte slot per worker, input id first
@@ -179,6 +183,12 @@ def main():
     t1 = time.monotonic()
     progs, recs, seen, skipped = {}, [], set(), {'not in this version': 0, 'stage': 0}
     variants += [(key, DEFAULT) for key in sorted(shaders)]
+    if a.version.startswith('smo'):
+        # SMO's vertex shaders read attribute 11 as uint in about three of four draws that bind it (122 of the 163 such
+        # variants met in a 10-minute session on 1.4.1; never sint, never another location), as float in the rest, so
+        # the default variant alone leaves most of them to translate during play. A shader that does not declare
+        # attribute 11 masks the answer away (gfx_shader.c mask_answers) and lands on its default variant's cache key.
+        variants += [(key, SMO_ATTR11_UINT) for key in sorted(shaders) if shaders[key]['stage'] == 'vs']
     for key, deps in variants:
         s = shaders.get(key)
         if not s:

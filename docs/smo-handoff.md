@@ -190,6 +190,18 @@ Rodar depois de cada `build_game.py`: `.venv-py314\Scripts\python tools\prepare_
 smo-v141`.
 `gfx_window_win.c` tinha o título da janela fixo em `L"TotK Recomp"` mesmo numa build SMO (`RT_NAME` existe
 exatamente para isso e o caminho SDL do Linux já usava); agora usa `RT_SMO ? L"SMO Recomp" : L"TotK Recomp"`.
+Depois virou "Super Mario Odyssey" (`RT_TITLE` em `host.h`; o nome Vulkan continua `RT_NAME`).
+
+**Pré-compilação cobria só ~18% dos shaders usados em jogo (corrigido 2026-11-06):** cruzando o
+`shader-answers.bin` de uma sessão de 10 min (1.186 programas) com o seed, só 66 de 547 vertex e 144 de 627 fragment
+estavam no inventário. Causa: os `.bfsha` (BNSH; `alRenderMaterial.bfsha` com os materiais de todo modelo, mais
+`alRenderSky`, `alRenderDepthOnly`, efeitos de `EffectData/`...) passavam por `shader_census.bnsh_shaders`, que pula
+seções de controle menores que 0x880 (layout antigo do utilitário do SDK) — no SDK 7 todas têm 0x7d1, então nenhum
+shader BNSH entrava. `smo_shader_census.bnsh_shaders` agora aceita 0x7d1 e completa com zeros até 0x880 (como
+`sharcb_shaders` e `control_view`): 28.023 shaders (era 10.965), 100% dos 1.186 da sessão. `prepare_shaders.py`
+no SMO lê sempre todas as pastas (só as de início já passam do limiar do fallback e `EffectData/` ficaria de fora).
+Também prepara, para todo vertex shader, a variante com o atributo 11 `uint` (índices de osso): das 1.186 variantes
+encontradas, 1.064 eram a padrão e as 122 restantes eram todas essa; o atributo 11 é lido como float nas outras 41.
 
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.

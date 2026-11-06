@@ -78,6 +78,42 @@ def sharcb_shaders(data, rejected):
             yield key, stage, control, code
 
 
+def bnsh_shaders(data):
+    """shader_census.bnsh_shaders for SDK 7 BNSH files (inside the .bfsha material archives): their control sections are
+    0x7d1 bytes, which that reader skips as the SDK utility's older layout, so every model material shader
+    (ShaderData/alRenderMaterial.bfsha and the other .bfsha) was missing from the inventory and translated in play.
+    Keys pad the control with zeros to 0x880, as sharcb_shaders and runtime/gfx_shader.c control_view do."""
+    if data[:4] != b'BNSH' or sc.checked(data, 12, 2) != b'\xff\xfe' or sc.checked(data, 96, 4) != b'grsc':
+        raise ValueError('unsupported BNSH header')
+    data = sc.checked(data, 0, struct.unpack_from('<I', data, 28)[0])
+    count, variations = struct.unpack_from('<IQ', data, 124)
+    sc.checked(data, variations, count * 64)
+    seen = set()
+    for i in range(count):
+        program = struct.unpack_from('<Q', data, variations + i * 64 + 16)[0]
+        sc.checked(data, program, 56)
+        for stage, relative in [('vs', 8), ('ps', 40), ('cs', 48)]:
+            offset = struct.unpack_from('<Q', data, program + relative)[0]
+            if not offset:
+                continue
+            control_off, code_off, code_size, control_size = struct.unpack_from('<QQII', sc.checked(data, offset + 8, 24))
+            if control_size < CONTROL_SIZE:
+                continue
+            control = sc.checked(data, control_off, CONTROL_SIZE)
+            code = sc.checked(data, code_off, code_size)
+            if control[:4] != sc.CONTROL_MAGIC:
+                raise ValueError('NVN control section without its magic')
+            c1, length = struct.unpack_from('<II', control, 0x700)
+            actual = struct.unpack_from('<I', control, 0x714)[0]
+            if actual != {'vs': 0, 'ps': 1, 'cs': 5}[stage] or not 0 <= c1 <= length <= len(code) or not length:
+                raise ValueError('invalid NVN shader bounds or stage')
+            control += bytes(CONTROL_KEY - CONTROL_SIZE)
+            key = sc.digest(control + code[:length])
+            if key not in seen:
+                seen.add(key)
+                yield key, stage, control, code[:length]
+
+
 def yaz0(raw):
     if raw[:4] != b'Yaz0':
         return raw
@@ -112,7 +148,7 @@ def inventory(romfs, exefs, everything):
         pos = 0   # BFSHA, BNSH and resource files that embed complete BNSH files
         while (pos := data.find(b'BNSH\0\0\0\0', pos)) >= 0:
             size = struct.unpack_from('<I', sc.checked(data, pos + 28, 4))[0]
-            add(origin, name, sc.bnsh_shaders(sc.checked(data, pos, size)), startup)
+            add(origin, name, bnsh_shaders(sc.checked(data, pos, size)), startup)
             pos += max(size, 8)
 
     dirs = SHADER_DIRS if everything else STARTUP_DIRS
