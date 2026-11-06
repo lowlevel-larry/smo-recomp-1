@@ -2505,7 +2505,7 @@ static void prebuild_start(void) {
         rt_log("vk_pipeline: prebuild off%s; %zu records not built",
                !cfg_bool("TOTK_PIPE_PREBUILD") ? " (TOTK_PIPE_PREBUILD=0)" : " (no boot prewarm)", K.file_n);
         free(K.file);
-        K.file = NULL;
+        K.file = NULL, K.file_n = 0;   // vk_pipeline_prewarm reads the records by the count
     }
     plat_mutex_unlock(&P.lock);
 }
@@ -3070,6 +3070,114 @@ static void lb_warm_prepared(const char *dir) {
     free(LB.e), LB.e = NULL, LB.n = 0, LB.next = 0, LB.done = 0, LB.skipped = 0;
 }
 
+// ---- what the preparation in a build folder was made from: shader-prepared.stamp, three lines "seed <sha256 of
+// seed-answers.bin>", "xlate <translator identity>", "gpu <vendor:device:driver version>". A game run compares them with
+// the folder now (vk_pipeline_prepare_needed): a new seed or translator needs the whole preparation, another GPU or
+// driver only the driver's step, whose disk cache starts empty then. The seed may be deleted after a preparation; the
+// stamp keeps its hash.
+typedef struct { char seed[65], xlate[65], gpu[32]; } Stamp;
+
+static void stamp_path(const char *dir, char *p, size_t n) { snprintf(p, n, "%s/shader-prepared.stamp", dir); }
+
+static void stamp_now(const char *dir, Stamp *s) {
+    char p[PLAT_PATH_MAX * 2 + 32];
+    snprintf(p, sizeof p, "%s/seed-answers.bin", dir);
+    uint64_t n = 0;
+    uint8_t *f = plat_file_read(p, &n), h[32];
+    s->seed[0] = 0;
+    if (f) {
+        rt_sha256(f, (size_t)n, h);
+        for (int i = 0; i < 32; i++) snprintf(s->seed + 2 * i, 3, "%02x", h[i]);
+    }
+    free(f);
+    gfx_shader_identity_hex(s->xlate);
+    gpu_key(s->gpu, sizeof s->gpu);
+}
+
+static int stamp_read(const char *dir, Stamp *s) {
+    char p[PLAT_PATH_MAX * 2 + 32];
+    stamp_path(dir, p, sizeof p);
+    uint64_t n = 0;
+    char *f = (char *)plat_file_read(p, &n);
+    int ok = f && n < 1024;
+    if (ok) {
+        char text[1024];
+        memcpy(text, f, (size_t)n), text[n] = 0;
+        ok = sscanf(text, "seed %64s xlate %64s gpu %31s", s->seed, s->xlate, s->gpu) == 3;
+    }
+    free(f);
+    return ok;
+}
+
+static void stamp_write(const char *dir, const Stamp *s) {
+    char p[PLAT_PATH_MAX * 2 + 32], text[256];
+    stamp_path(dir, p, sizeof p);
+    int n = snprintf(text, sizeof text, "seed %s\nxlate %s\ngpu %s\n", s->seed, s->xlate, s->gpu);
+    plat_file_write_atomic(p, text, (size_t)n);
+}
+
+static volatile int32_t prep_phase;   // 1 translating the seed, 2 the driver's step, 0 neither (the progress screen)
+
+// need 1: translate the seed and build every prepared variant into the driver's cache; 2: only build them. Writes the
+// stamp when it worked. 0 on success.
+static int prepare_do(const char *dir, int need) {
+    Stamp now, have;
+    int had = stamp_read(dir, &have);
+    int rc = 0;
+    if (need == 1) {
+        int cpus = (int)plat_cpu_usable();
+        const char *pe = cfg_get("TOTK_PREWARM_XLATE");   // no fixed default: half the CPUs, at most 16, when unset
+        int procs = pe && *pe ? atoi(pe) : cpus / 2 > 16 ? 16 : cpus / 2;
+        plat_xchg32(&prep_phase, 1);
+        rc = gfx_shader_prepare_seed(dir, cpus, procs < 1 ? 1 : procs);
+    }
+    if (!rc) {
+        plat_xchg32(&prep_phase, 2);
+        lb_warm_prepared(dir);
+        stamp_now(dir, &now);
+        if (!now.seed[0] && had) memcpy(now.seed, have.seed, sizeof now.seed);   // the seed was deleted afterwards
+        if (now.seed[0]) stamp_write(dir, &now);
+    }
+    plat_xchg32(&prep_phase, 0);
+    return rc;
+}
+
+int vk_pipeline_prepare_needed(void) {
+    // A game run asks before its boot prewarm (boot.c): the device comes up here, and the prewarm follows, so the
+    // pipeline keys stay for it (prebuild_start drops them for a run without one).
+    if (!P.ready) K.warm = cfg_bool("TOTK_PIPE_PREBUILD");
+    if (!ensure_init()) return 0;
+    char dir[PLAT_PATH_MAX * 2], prp[PLAT_PATH_MAX * 2 + 32];
+    if (!cache_dir(dir, sizeof dir)) return 0;
+    snprintf(prp, sizeof prp, "%s/shader-prepared.bin", dir);
+    int prepared = plat_file_exists(prp);
+    Stamp now, have;
+    stamp_now(dir, &now);
+    int had = stamp_read(dir, &have);
+    if (now.seed[0]) {
+        if (!prepared || !had || strcmp(have.seed, now.seed) || strcmp(have.xlate, now.xlate)) return 1;
+        return strcmp(have.gpu, now.gpu) ? 2 : 0;
+    }
+    // no seed: only the driver's step can run again, and only for the translator the prepared variants were made with
+    return prepared && had && !strcmp(have.xlate, now.xlate) && strcmp(have.gpu, now.gpu) ? 2 : 0;
+}
+
+int vk_pipeline_prepare_run(int need) {
+    char dir[PLAT_PATH_MAX * 2];
+    if (!ensure_init() || !cache_dir(dir, sizeof dir)) return 1;
+    return prepare_do(dir, need);
+}
+
+void vk_pipeline_prepare_progress(int *phase, uint64_t *done, uint64_t *total) {
+    *phase = (int)plat_cas32(&prep_phase, 0, 0);
+    if (*phase == 1) {
+        gfx_shader_prepare_progress(done, total);
+    } else {
+        size_t n = LB.n, next = (size_t)plat_cas64(&LB.next, 0, 0);
+        *total = n, *done = next < n ? next : n;
+    }
+}
+
 // totk.exe --prepare-shaders (tools/prepare_shaders.py): the device sets the translator's host answers (they are in every
 // cache key), the seed next to totk.exe is translated on every core, then every prepared variant's stage library or
 // compute pipeline is built once into the driver's disk cache (lb_warm_prepared). No game runs.
@@ -3080,12 +3188,7 @@ int vk_pipeline_prepare_shaders(void) {
     }
     char dir[PLAT_PATH_MAX * 2];
     if (!cache_dir(dir, sizeof dir)) return 1;
-    int cpus = (int)plat_cpu_usable();
-    const char *pe = cfg_get("TOTK_PREWARM_XLATE");   // no fixed default: half the CPUs, at most 16, when unset
-    int procs = pe && *pe ? atoi(pe) : cpus / 2 > 16 ? 16 : cpus / 2;
-    int rc = gfx_shader_prepare_seed(dir, cpus, procs < 1 ? 1 : procs);
-    if (!rc) lb_warm_prepared(dir);
-    return rc;
+    return prepare_do(dir, 1);
 }
 
 // totk.exe --warm-shaders: every variant of shader-prepared.bin built into the driver's disk cache again from the shader
@@ -3105,8 +3208,7 @@ int vk_pipeline_warm_shaders(void) {
         fprintf(stderr, "warm-shaders: no %s (tools/prepare_shaders.py writes it)\n", prp);
         return 1;
     }
-    lb_warm_prepared(dir);
-    return 0;
+    return prepare_do(dir, 2);
 }
 
 // ---- dynamic state

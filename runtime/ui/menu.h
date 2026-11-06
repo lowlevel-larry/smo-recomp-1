@@ -50,6 +50,9 @@ typedef struct {
 // path when the test hook wants this frame's swapchain image saved, else NULL. The first open starts ImGui's Vulkan
 // back end and uploads the font. With the menu closed it costs two loads and a compare.
 int menu_overlay_frame(uint64_t frame, const MenuTarget *t, const char **shot);
+// The shader preparation screen in place of the menu while phase is not 0 (1 translating, 2 the driver's step): step of
+// steps, done of total in this phase. Any thread; vk_present_loading shows it before the game draws.
+void menu_loading(int phase, int step, int steps, uint64_t done, uint64_t total);
 // Records the frame menu_overlay_frame laid out into cb, which is inside dynamic rendering on the image.
 void menu_overlay_draw(VkCommandBuffer cb);
 void menu_vk_release(void);               // before the device goes away (gfx_window_release_vk)

@@ -1889,9 +1889,13 @@ void gfx_shader_record_at(const char *keys_path) {
 
 // A get resolved (r, a) to s: queue the record when its input id is new, and its program when new. Cost: a set
 // lookup under a lock per call; gets happen per (program, answers) change in vk_exec_draw's shader table, not per draw.
+// While a game run prepares the seed (boot.c prepare_at_start) its translations are not answers met in play.
+static volatile int32_t ans_muted;
+void gfx_shader_record_mute(int on) { plat_xchg32(&ans_muted, on); }
+
 static void ans_note(const Req *r, int stage, const uint8_t *control, const uint8_t *code, const GfxShaderAnswers *a,
                      const GfxShader *s) {
-    if (!RC.on) return;
+    if (!RC.on || plat_cas32(&ans_muted, 0, 0)) return;
     uint32_t st = (uint32_t)stage;
     plat_mutex_lock(&RC.lock);
     if (set_add(&RC.pairs, hash8(s->iid))) {
@@ -1992,6 +1996,22 @@ static void prep_worker(void *arg) {
     }
 }
 
+// The running prepare_files: records done of prep_total, for the boot's progress screen (another thread reads them).
+static volatile int64_t prep_total;
+static volatile int64_t *volatile prep_cur;
+
+void gfx_shader_prepare_progress(uint64_t *done, uint64_t *total) {
+    volatile int64_t *d = prep_cur;
+    *total = (uint64_t)plat_cas64(&prep_total, 0, 0);
+    *done = d ? (uint64_t)*d : 0;
+}
+
+// The translator identity the cache keys use (host options mixed in), as 64 hex digits.
+void gfx_shader_identity_hex(char out[65]) {
+    paths();
+    key_hex(xlate_id, out);
+}
+
 // Translates every record of ans_path whose program is in prg_path on `threads` threads with up to `procs` translators.
 // *ans_out, *iid_out (optional; free them): the answers records and the input id each resolved to (zero: failed).
 // Returns the record count, -1 without the files.
@@ -2017,6 +2037,7 @@ static long long prepare_files(const char *ans_path, const char *prg_path, int t
     svc_set_limit(procs);
     PlatThread *t[64];
     int k = 0;
+    plat_xchg64(&prep_total, (int64_t)p.n_ans), prep_cur = &p.done;
     for (int i = 0; i < threads; i++)
         if ((t[k] = plat_thread_new(prep_worker, &p, "shader prepare"))) k++;
     if (!k) prep_worker(&p);
@@ -2024,6 +2045,7 @@ static long long prepare_files(const char *ans_path, const char *prg_path, int t
         while (!plat_thread_join_ns(t[m], 5000000000u))
             rt_log("gfx_shader: prepare: %lld of %zu pairs, %llu translated, %.0f ms", (long long)p.done, p.n_ans,
                    (unsigned long long)((uint64_t)n_xlated - xl0), (double)plat_now_ms() - t0);
+    prep_cur = NULL;
     svc_set_limit(svc_runtime_limit());
     rt_log("gfx_shader: prepare: %zu %s of %zu programs: %llu translated, %lld failed, %lld without a program, the rest "
            "cached; %.0f ms", p.n_ans, what, p.progs.n, (unsigned long long)((uint64_t)n_xlated - xl0), (long long)p.failed,

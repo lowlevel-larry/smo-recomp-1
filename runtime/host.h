@@ -313,5 +313,8 @@ int probe_shader(void);                                    // gfx_shader.c
 int probe_census_dir(char *dir, size_t n);                 // gfx_shader_probe.c: build/<version>/shaders for the probes
 int probe_vkmem(void), probe_vkexec(void), probe_astc(void);                 // tex_probe.c, vk_exec_probe.c, astc_probe.c
 int probe_movie(void);                                     // movie_probe.c: host VP9 movie::Decoder on one RomFS movie
+int vk_pipeline_prepare_needed(void);                      // 0 current, 1 translate and build, 2 driver step only
+int vk_pipeline_prepare_run(int need);                     // that preparation in a game run (boot.c); 0 on success
+void vk_pipeline_prepare_progress(int *phase, uint64_t *done, uint64_t *total);   // phase 1 translate, 2 driver, 0 none
 int vk_pipeline_prepare_shaders(void);                     // vk_pipeline.c: --prepare-shaders (tools/prepare_shaders.py)
 int vk_pipeline_warm_shaders(void);                        // vk_pipeline.c: --warm-shaders (tools/build_game.py)

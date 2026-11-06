@@ -143,14 +143,19 @@ graphics settings and most of the shader preparation ([smo-handoff.md](smo-hando
 .venv\Scripts\python tools\build_game.py --version smo-v141 --expected tools\data\smo-expected-v1.4.1.json
 # H.264 decoder for the cutscenes (Cisco's binary, next to smo.exe)
 .venv\Scripts\python tools\fetch_openh264.py --out build\smo-v141
-# shaders: every material, effect and system shader (about 28,000, 30,000 variants), ~4 min the first time
-.venv-py314\Scripts\python tools\prepare_shaders.py build\smo-v141 --version smo-v141
+# shaders: the seed of every material, effect and system shader (about 28,000, 30,000 variants), ~16 s, no GPU
+.venv-py314\Scripts\python tools\prepare_shaders.py build\smo-v141 --version smo-v141 --no-run
 ```
 
-Run `prepare_shaders.py` again after each lift or translator change, and after a GPU driver update (the driver's
-pipeline cache starts empty then). Without it every shader compiles the first time it is drawn, which shows as
-stutter of up to a second. `smo.exe` runs with `TOTK_SHARED_FONTS` set to a folder of substitute fonts and
-`TOTK_PROFILE_DIR` set to a save folder outside `build\`; settings go to `smo.ini` next to the exe.
+The first start of `smo.exe` then prepares the seed in the game window, with a progress screen in the game's own
+lettering, before the game begins (~4 min; `boot.c` `prepare_at_start`). `shader-prepared.stamp` next to the exe
+records the seed, translator and GPU driver it was prepared for: a new seed or translator prepares everything again, a
+new driver only builds the variants into its cache again (its disk cache starts empty), each with the same screen.
+Without the seed every shader compiles the first time it is drawn, which shows as stutter of up to a second.
+Without `--no-run`, `prepare_shaders.py` does the whole preparation in the console as before and writes the same stamp.
+`smo.exe` runs with `TOTK_SHARED_FONTS` set to a folder of substitute fonts and `TOTK_PROFILE_DIR` set to a save
+folder outside `build\`; settings go to `smo.ini` next to the exe. A run that ends in a FATAL line also leaves a copy of
+its log in `logs\crashes\` (the 30 newest), indexed in `logs\crashes\crashes.txt`.
 
 Settings live in `totk.ini` next to `totk.exe` ([totk.ini.example](../totk.ini.example) lists them). Saves go to
 `build\profile` for `v121` and `build\profile-<ver>` for other versions (`build_game.py --profile` changes it).

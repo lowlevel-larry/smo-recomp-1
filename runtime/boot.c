@@ -343,9 +343,47 @@ static void prewarm_main(void *arg) {
     return;
 }
 
+// ---- shader preparation at start: when the build folder holds a seed (tools/prepare_shaders.py --no-run) that was not
+// prepared for this translator, GPU and driver (vk_pipeline_prepare_needed), the game window shows its progress in the
+// game's lettering (ui/menu.cpp layout_loading) while it runs, instead of a console; then the boot goes on as usual. A
+// new driver alone only builds the prepared variants into its cache again.
+void menu_loading(int phase, int step, int steps, uint64_t done, uint64_t total);   // ui/menu.h (C++)
+
+static int prep_need, prep_rc;
+static void prepare_main(void *arg) {
+    (void)arg;
+    prep_rc = vk_pipeline_prepare_run(prep_need);
+}
+
+static void prepare_at_start(void) {
+    if (rt_config()->shot || !(prep_need = vk_pipeline_prepare_needed())) return;
+    uint64_t t0 = plat_now_ms();
+    rt_log("boot: preparing the shaders (%s) before the game starts",
+           prep_need == 1 ? "seed translation and driver build" : "driver build only: another GPU or driver");
+    gfx_shader_record_mute(1);
+    gfx_window_start();
+    int steps = prep_need == 1 ? 2 : 1;
+    menu_loading(prep_need == 1 ? 1 : 2, 1, steps, 0, 0);
+    PlatThread *t = plat_thread_new(prepare_main, NULL, "shader prep");
+    if (!t) prepare_main(NULL);
+    while (t && !plat_thread_join_ns(t, 16000000u)) {
+        int phase;
+        uint64_t done, total;
+        vk_pipeline_prepare_progress(&phase, &done, &total);
+        if (phase) menu_loading(phase, steps == 2 ? phase : 1, steps, done, total);
+        vk_present_loading();
+    }
+    menu_loading(0, 0, 0, 0, 0);
+    gfx_shader_record_mute(0);
+    rt_log("boot: shader preparation %s in %llu s", prep_rc ? "failed" : "done",
+           (unsigned long long)((plat_now_ms() - t0) / 1000));
+}
+
 void rt_boot(void) {
     check_npdm();
     if (!rt_config()->shot) vk_pipeline_async_enable();   // a --shot image must not depend on build timing
+    // after async_enable: the pipeline keys and the answers met in play are opened with the device (keys_open)
+    prepare_at_start();
     // Shaders and pipelines recorded in earlier runs are made ready while the modules load; the guest waits for them.
     PlatThread *warm = plat_thread_new(prewarm_main, NULL, "prewarm");
     ldr_load(rt_config()->exefs);

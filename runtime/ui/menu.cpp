@@ -11,6 +11,7 @@
 // 575ad88e02f9a89a9a885d90039d48af33c982f4, MIT, Copyright (c) 2026 Revivedx and the Savage Wind Recomp contributors,
 // Copyright (c) 2026 Peiikai); the pages are rows of option_rows.cpp.
 #include <atomic>
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -54,6 +55,16 @@ extern const int rt_game_smo;
 int romfs_xbox_prompts_ready(void);
 int romfs_xbox_prompts_active(void);
 extern const char rt_port_version[];
+uint8_t *ov_standard_font(uint64_t *size);   // ov.h: the game's standard shared font, decoded (malloc'd)
+}
+
+// ---- the shader preparation screen (boot.c prepare_at_start), any thread: phase 0 off, 1 translating, 2 the driver's
+// step; step of steps; done of total records
+static std::atomic<int> g_load_phase, g_load_step, g_load_steps;
+static std::atomic<uint64_t> g_load_done, g_load_total;
+extern "C" void menu_loading(int phase, int step, int steps, uint64_t done, uint64_t total) {
+    g_load_done.store(done), g_load_total.store(total), g_load_step.store(step), g_load_steps.store(steps);
+    g_load_phase.store(phase);
 }
 
 // Roboto Medium (Apache-2.0, ui/fonts/LICENSE-Roboto.txt) with Latin and Cyrillic glyphs.
@@ -185,6 +196,8 @@ static int g_failed_flag() { return g_failed.load(std::memory_order_relaxed); }
 static int g_vk_ok;               // back end initialised for g_vk_fmt
 static VkFormat g_vk_fmt;
 static float g_font_scale;        // the scale of the uploaded font atlas; 0 when none is uploaded
+static ImFont *g_font_title, *g_font_body;   // the game's font for the preparation screen; null: the default font
+static int g_font_loading;        // the atlas was made for the preparation screen (with the game's font)
 static float g_style_scale;       // the scale the style was last sized for
 static ImGuiStyle g_base_style;   // the menu's style at 1080 lines
 static uint64_t g_last_ns;
@@ -379,12 +392,26 @@ static int fonts_up(float scale) {
         mc.FontDataOwnedByAtlas = false;
         fa->AddFontFromMemoryTTF(data[i], (int)size, 26.0f * scale, &mc, ranges[i].Data);
     }
+    // The game's own lettering for the shader preparation screen: its standard shared font (the firmware's, or the
+    // substitute that stands in for it), at the screen's two sizes. Without it that screen uses Roboto.
+    uint64_t gsize = 0;
+    uint8_t *game = g_load_phase.load() ? ov_standard_font(&gsize) : NULL;
+    g_font_title = g_font_body = nullptr;
+    if (game && font_usable(game, gsize)) {
+        ImFontConfig gc;
+        gc.FontDataOwnedByAtlas = false;
+        g_font_title = fa->AddFontFromMemoryTTF(game, (int)gsize, 60.0f * scale, &gc, kRanges);
+        g_font_body = fa->AddFontFromMemoryTTF(game, (int)gsize, 30.0f * scale, &gc, kRanges);
+    }
     vk_queue_lock();   // the upload submits on the queue and waits for it
     int ok = ImGui_ImplVulkan_CreateFontsTexture();
     vk_queue_unlock();
     fa->ClearInputData();   // the glyphs are in the texture: the font files and the pixels are not needed again
     fa->ClearTexData();
     for (uint8_t *d : data) free(d);
+    free(game);
+    g_font_loading = g_load_phase.load() != 0;
+    if (g_font_title) rt_log("menu: the game's standard font for the preparation screen");
     rt_log("menu: font atlas at %.1f px, language names from %d of %d system fonts", 26.0f * scale, merged, (int)N);
     g_font_scale = ok ? scale : 0;
     return ok;
@@ -1233,8 +1260,124 @@ static void perf_draw(const MenuTarget *t, float scale) {
     dl->AddText(ImVec2(p.x + pad, p.y + pad), IM_COL32(255, 255, 255, 235), g_perf_text);
 }
 
+// ---- the shader preparation screen: the game's font and the menu's colours over the navy background
+// (gfx_present.c vk_present_loading). Portuguese for a Portuguese Windows, English otherwise.
+static void group_digits(uint64_t v, char *out, size_t n, char sep) {
+    char raw[32];
+    int len = snprintf(raw, sizeof raw, "%llu", (unsigned long long)v), o = 0;
+    for (int i = 0; i < len && o + 2 < (int)n; i++) {
+        if (i && (len - i) % 3 == 0) out[o++] = sep;
+        out[o++] = raw[i];
+    }
+    out[o] = 0;
+}
+
+static void centered(ImFont *f, const char *s, float y, ImU32 col) {
+    ImFont *font = f ? f : ImGui::GetFont();
+    float size = f ? f->FontSize : ImGui::GetFontSize();
+    ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0, s);
+    ImGui::GetWindowDrawList()->AddText(font, size, ImVec2((ImGui::GetIO().DisplaySize.x - ts.x) * 0.5f, y), col, s);
+}
+
+static void layout_loading(uint32_t w, uint32_t h, float scale) {
+    const char *loc = plat_user_locale();
+    bool pt = loc && !strncmp(loc, "pt", 2);
+    int phase = g_load_phase.load(), step = g_load_step.load(), steps = g_load_steps.load();
+    uint64_t done = g_load_done.load(), total = g_load_total.load();
+    float frac = total ? (float)((double)done / (double)total) : 0.0f;
+    // the rate over this phase, for a time left once it has run a few seconds
+    static int rate_phase;
+    static uint64_t rate_t0, rate_d0;
+    uint64_t now = plat_now_ns();
+    if (phase != rate_phase) rate_phase = phase, rate_t0 = now, rate_d0 = done;
+    double secs = (double)(now - rate_t0) / 1e9, per = secs > 0 ? (double)(done - rate_d0) / secs : 0;
+    int left = per > 0 && secs > 4 && total > done ? (int)((double)(total - done) / per) : -1;
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2((float)w, (float)h));
+    ImGui::Begin("##loading", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+                                           ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
+                                           ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+    ImVec4 gold = accent();
+    ImU32 c_gold = ImGui::GetColorU32(gold), c_text = ImGui::GetColorU32(ImGuiCol_Text),
+          c_dim = ImGui::GetColorU32(ImGuiCol_TextDisabled), c_track = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    float title_h = g_font_title ? g_font_title->FontSize : ImGui::GetFontSize();
+    float body_h = g_font_body ? g_font_body->FontSize : ImGui::GetFontSize();
+    float y = (float)h * 0.34f;
+    centered(g_font_title, pt ? "Preparando os shaders" : "Preparing the shaders", y, c_gold);
+    y += title_h + 24 * scale;
+    char line[192];
+    const char *what = phase == 1 ? (pt ? "Traduzindo os shaders do jogo" : "Translating the game's shaders")
+                                  : (pt ? "Compilando na placa de v\xc3\xad" "deo" : "Building them on the graphics card");
+    if (steps > 1) snprintf(line, sizeof line, pt ? "Etapa %d de %d: %s" : "Step %d of %d: %s", step, steps, what);
+    else snprintf(line, sizeof line, "%s", what);
+    centered(g_font_body, line, y, c_text);
+    y += body_h + 40 * scale;
+    // the bar: a rounded track, the gold fill, a lighter top half for some depth
+    float bw = (float)w * 0.46f, bh = 26 * scale, bx = ((float)w - bw) * 0.5f, r = bh * 0.5f;
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(ImVec2(bx, y), ImVec2(bx + bw, y + bh), c_track, r);
+    if (frac > 0) {
+        float fw = bw * (frac > 1 ? 1 : frac);
+        if (fw < bh) fw = bh;
+        dl->AddRectFilled(ImVec2(bx, y), ImVec2(bx + fw, y + bh), c_gold, r);
+        dl->AddRectFilled(ImVec2(bx + r * 0.5f, y + bh * 0.18f), ImVec2(bx + fw - r * 0.5f, y + bh * 0.45f),
+                          IM_COL32(255, 255, 255, 60), r * 0.4f);
+    }
+    y += bh + 22 * scale;
+    char a[32], b[32];
+    group_digits(done, a, sizeof a, pt ? '.' : ',');
+    group_digits(total, b, sizeof b, pt ? '.' : ',');
+    int pct = (int)(frac * 100.0f + 0.5f);
+    if (left >= 60)
+        snprintf(line, sizeof line, pt ? "%s de %s  \xc2\xb7  %d%%  \xc2\xb7  cerca de %d min" : "%s of %s  \xc2\xb7  %d%%  \xc2\xb7  about %d min left",
+                 a, b, pct, (left + 30) / 60);
+    else if (left >= 0)
+        snprintf(line, sizeof line, pt ? "%s de %s  \xc2\xb7  %d%%  \xc2\xb7  menos de 1 min" : "%s of %s  \xc2\xb7  %d%%  \xc2\xb7  under a minute left",
+                 a, b, pct);
+    else
+        snprintf(line, sizeof line, pt ? "%s de %s  \xc2\xb7  %d%%" : "%s of %s  \xc2\xb7  %d%%", a, b, pct);
+    centered(g_font_body, line, y, c_dim);
+    float ny = (float)h * 0.84f;
+    centered(g_font_body,
+             pt ? "Isto s\xc3\xb3 acontece na primeira vez ou depois de atualizar o driver de v\xc3\xad" "deo."
+                : "This happens only the first time, or after a graphics driver update.",
+             ny, c_dim);
+    centered(g_font_body,
+             pt ? "Depois, o jogo n\xc3\xa3o trava mais compilando shaders."
+                : "Afterwards the game no longer stutters compiling shaders.",
+             ny + body_h + 8 * scale, c_dim);
+    ImGui::End();
+}
+
 extern "C" int menu_overlay_frame(uint64_t frame, const MenuTarget *t, const char **shot) {
     *shot = NULL;
+    if (g_load_phase.load()) {   // the preparation screen alone: no menu, no input, no performance overlay
+        if (g_failed_flag()) return 0;
+        if (!g_ctx_ok) make_context();
+        float scale = menu_scale(t->height);
+        if (!vk_up(t) || ((g_font_scale != scale || !g_font_loading) && !fonts_up(scale))) {
+            g_failed.store(1);
+            return 0;
+        }
+        if (g_style_scale != scale) {
+            ImGui::GetStyle() = g_base_style;
+            ImGui::GetStyle().ScaleAllSizes(scale);
+            g_style_scale = scale;
+        }
+        ImGuiIO &io = ImGui::GetIO();
+        io.DisplaySize = ImVec2((float)t->width, (float)t->height);
+        uint64_t t0 = plat_now_ns();
+        double dt = g_last_ns ? (t0 - g_last_ns) / 1e9 : 1 / 60.0;
+        io.DeltaTime = (float)(dt < 1e-4 ? 1e-4 : dt > 0.1 ? 0.1 : dt);
+        g_last_ns = t0;
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+        layout_loading(t->width, t->height, scale);
+        ImGui::Render();
+        return ImGui::GetDrawData()->TotalVtxCount > 0;
+    }
+    if (g_font_loading) g_font_scale = 0;   // the screen is over: the next frame makes the menu's atlas again
     if (!g_test.parsed) test_parse();
     if (g_test.next_set < g_test.n_sets && frame >= g_test.sets[g_test.next_set].frame) test_apply_sets(frame);
     if (g_perf_save.exchange(0)) cfg_save();

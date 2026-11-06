@@ -598,6 +598,12 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
                      VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                      VK_ACCESS_2_TRANSFER_WRITE_BIT);
     }
+    if (!src) {   // no game image (vk_present_loading): the overlay over the menu's navy
+        VkClearColorValue navy = {.float32 = {0.02f, 0.03f, 0.09f, 1}};   // UNORM swapchain: the bytes as given
+        VkImageSubresourceRange all = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &navy, 1, &all);
+        g_scaler = 0;
+    } else {
     // Colour adjustment (TOTK_COLOR_*, vk_color.c): an adjusted copy of the crop takes the game image's place below
     VkImage graded = general ? vk_color_record(cb, slot, src, fmt, rect) : VK_NULL_HANDLE;
     PRESENT_STEP(2);
@@ -621,6 +627,7 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
         if (general)   // later submissions that write the source wait for the blit's read
             sync_barrier(cb, psrc, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT, 0,
                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0);
+    }
     }
     PRESENT_STEP(3);
     // last: the image's layout, and the stage and access of its last write, as each step leaves it
@@ -708,6 +715,9 @@ void vk_present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w, in
 void vk_present_blit(VkImage src, VkImageLayout layout, VkFormat fmt, int w, int h, const int crop[4]) {
     present_image(src, layout, fmt, w, h, crop, 1);
 }
+
+// A frame of the overlay alone, before the game draws anything (boot.c: the shader preparation's progress screen).
+void vk_present_loading(void) { present_image(VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED, VK_FORMAT_UNDEFINED, 1920, 1080, NULL, 0); }
 
 void vk_present_flip(void) {
     plat_rmutex_lock(&g_pl);

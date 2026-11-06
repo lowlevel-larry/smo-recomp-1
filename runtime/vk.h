@@ -104,6 +104,7 @@ void vk_crumbs_report(void);         // logs the two codes and what they name
 // the blit). All its writes must be submitted to gfx_queue before the call (queue order does the rest). Starts the
 // window on first use. A minimised window or a lost swapchain skips the frame. Calls serialise on an internal lock.
 void vk_present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w, int h, const int crop[4]);
+void vk_present_loading(void);   // the menu overlay alone over a plain background (the boot's progress screen)
 // vk_present_image split in two: vk_present_blit submits the blit and leaves the present waiting, vk_present_flip
 // queues it. The next blit or a swapchain rebuild queues a waiting present first.
 void vk_present_blit(VkImage src, VkImageLayout layout, VkFormat fmt, int w, int h, const int crop[4]);

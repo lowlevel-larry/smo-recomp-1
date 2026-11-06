@@ -733,6 +733,24 @@ uint64_t ov_bfttf_size(const uint8_t *p, uint64_t len) {
     return (uint64_t)size + 8 == len && (first == 0x00010000u || first == 0x4f54544fu) ? size : 0;
 }
 
+// The standard shared font (type 0) the game draws its text with, decoded to its sfnt in a malloc'd copy (free it), for
+// the host's own screens that want the game's lettering (ui/menu.cpp, the shader preparation screen). NULL when the file
+// is missing or not a BFTTF font.
+uint8_t *ov_standard_font(uint64_t *size) {
+    char dir[PLAT_PATH_MAX], path[PLAT_PATH_MAX + 64];
+    snprintf(path, sizeof path, "%s/%s", ov_shared_font_dir(dir, sizeof dir), font_files[0]);
+    uint64_t len = 0;
+    uint8_t *p = plat_file_read(path, &len);
+    uint64_t n = p ? ov_bfttf_size(p, len) : 0;
+    if (!n) return free(p), NULL;
+    uint32_t key = be32(p) ^ BFTTF_MAGIC;
+    for (uint64_t i = 8; i + 4 <= len; i += 4)
+        for (int b = 0; b < 4; b++) p[i + b] ^= (uint8_t)(key >> (24 - 8 * b));
+    memmove(p, p + 8, (size_t)n);
+    *size = n;
+    return p;
+}
+
 static const char *font_type_name(int64_t t) { return font_files[t] + 2; }
 
 static int64_t font_type(Cpu *c, const char *fn) {
