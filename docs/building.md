@@ -130,6 +130,28 @@ of them.
    build\<ver>\totk.exe
    ```
 
+### Super Mario Odyssey (smo-v141)
+
+The same steps with SMO's tools and names. Each one matters: the first Windows build skipped two of them and lost the
+graphics settings and most of the shader preparation ([smo-handoff.md](smo-handoff.md), "Windows").
+
+```powershell
+# extract (the default --hactool is the Linux binary)
+.venv-py314\Scripts\python tools\smo_extract.py --hactool toolchain\hactool\hactool.exe
+# lift WITH the patch table: without it smo_1080, smo_lod, smo_photo_quality and smo_photo60 do nothing
+.venv\Scripts\python recomp\gen.py --exefs build\extracted\smo-v141\exefs --out generated\smo-v141 --patches recomp\patches-smo-v141.txt
+.venv\Scripts\python tools\build_game.py --version smo-v141 --expected tools\data\smo-expected-v1.4.1.json
+# H.264 decoder for the cutscenes (Cisco's binary, next to smo.exe)
+.venv\Scripts\python tools\fetch_openh264.py --out build\smo-v141
+# shaders: every material, effect and system shader (about 28,000, 30,000 variants), ~4 min the first time
+.venv-py314\Scripts\python tools\prepare_shaders.py build\smo-v141 --version smo-v141
+```
+
+Run `prepare_shaders.py` again after each lift or translator change, and after a GPU driver update (the driver's
+pipeline cache starts empty then). Without it every shader compiles the first time it is drawn, which shows as
+stutter of up to a second. `smo.exe` runs with `TOTK_SHARED_FONTS` set to a folder of substitute fonts and
+`TOTK_PROFILE_DIR` set to a save folder outside `build\`; settings go to `smo.ini` next to the exe.
+
 Settings live in `totk.ini` next to `totk.exe` ([totk.ini.example](../totk.ini.example) lists them). Saves go to
 `build\profile` for `v121` and `build\profile-<ver>` for other versions (`build_game.py --profile` changes it).
 
