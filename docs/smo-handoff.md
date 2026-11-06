@@ -149,6 +149,19 @@ Correção: `smo_language_or_fallback()` em `ov_system.c`, só sob `RT_SMO`, res
 aos 14 idiomas que o RomFS do SMO de fato tem, com fallback para `en-US` e um log explicando. TotK continua sem essa
 restrição (tem pasta de português). Testado: sem `TOTK_LANG`, locale `pt-BR`, roda 600+ frames a 60 fps sem crash.
 
+**Crash intermitente logo após a janela ganhar foco (2026-11-05, não corrigido):** access violation lendo
+`0x7001354b6800` (não nulo; cai no vão de endereço entre o fim de `main` e o início de `subsdk0` — um ponteiro
+"selvagem", não um null-pointer) em `f_7000954f60` (`main+0x954f60`), uma travessia de lista encadeada genérica
+(dispatch de destrutor por nó via vtable, padrão clássico de contêiner intrusivo). Pilha: `main+0x9510ec <-
+main+0x95d664 <- main+0x746330 <- main+0x7489c0 <- main+0x63373c <- main+0x70a7cc <- main+0x46ac10 <-
+main+0x44af3c <- main+0x7acd94 <- main+0x964640 <- main+0x963d18 <- sdk+0x329e88 <- sdk+0x32e294 <- host`.
+Só aconteceu numa de quatro tentativas, bem no momento em que `gfx: window gained the focus` / FSR termina de montar;
+as outras três rodaram 20+ min a 60 fps sem crash. Marca de corrida entre threads (uma thread lê um nó da lista
+antes de outra terminar de inicializá-lo), não de ponteiro nulo como o bug do idioma. Pode ser mais sensível no
+Windows por diferença de escalonamento de thread do host vs. Linux; não reproduzido de propósito ainda. Próxima
+pista: `TOTK_TRACE=sched` nesse trecho do boot para ver o que as threads do jogo fazem por volta do frame em que
+a janela ganha foco; ou reduzir `TOTK_ASYNC_PREEMPT`/afinidade de CPU para forçar o timing e tentar reproduzir.
+
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
 2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
