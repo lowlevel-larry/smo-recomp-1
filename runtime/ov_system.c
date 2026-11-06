@@ -87,6 +87,19 @@ static const char *switch_language(const char *tag) {
     return "en-US";
 }
 
+// SMO's RomFS (tools/smo_extract.py's LocalizedData) has no Portuguese folder, unlike TotK: a code this runtime would
+// otherwise hand to SMO as "pt" or "pt-BR" has nothing to load and crashes deep in the game's own message lookup
+// (observed on a pt-BR Windows install: an access violation reading near-null inside main, well before NVN boot).
+// LocalizedData's actual subfolders: JPja, USen, EUen, EUde, EUit, EUes, USes, EUfr, USfr, EUnl, EUru, KRko, CNzh, TWzh.
+static const char *smo_language_or_fallback(const char *code) {
+    static const char *const shipped[] = {"ja", "en-US", "en-GB", "de", "it", "es", "es-419", "fr", "fr-CA",
+                                           "nl", "ru", "ko", "zh-Hans", "zh-Hant"};
+    for (size_t i = 0; i < sizeof shipped / sizeof *shipped; i++)
+        if (!strcmp(code, shipped[i])) return code;
+    rt_log("oe: SMO has no '%s' localization; falling back to en-US", code);
+    return "en-US";
+}
+
 // The game's language as a Switch language code (TOTK_LANG, else TOTK_LOCALE, else the Windows user locale). TotK
 // accepts "zh-Hans" and "zh-Hant" for Chinese and falls back to Japanese for "zh-CN" and "zh-TW", so those two
 // spellings, which older totk.ini files and menus wrote, are mapped to them.
@@ -95,10 +108,10 @@ const char *ov_language(void) {
                                         "en-GB", "fr-CA", "es-419", "zh-Hans", "zh-Hant", "pt-BR"};
     const char *code = cfg_get("TOTK_LANG");   // no fixed default: TOTK_LOCALE or the Windows user locale decides when unset
     if (code && *code) {
-        if (!strcmp(code, "zh-CN")) return "zh-Hans";
-        if (!strcmp(code, "zh-TW")) return "zh-Hant";
+        if (!strcmp(code, "zh-CN")) return RT_SMO ? smo_language_or_fallback("zh-Hans") : "zh-Hans";
+        if (!strcmp(code, "zh-TW")) return RT_SMO ? smo_language_or_fallback("zh-Hant") : "zh-Hant";
         for (size_t i = 0; i < sizeof codes / sizeof *codes; i++)
-            if (!strcmp(code, codes[i])) return codes[i];
+            if (!strcmp(code, codes[i])) return RT_SMO ? smo_language_or_fallback(codes[i]) : codes[i];
         rt_fatal("TOTK_LANG '%s' is not a Switch language code", code);
     }
     const char *tag = cfg_get("TOTK_LOCALE");
@@ -107,7 +120,8 @@ const char *ov_language(void) {
         if (*plat_user_locale()) snprintf(sys, sizeof sys, "%s", plat_user_locale());
         tag = sys;
     }
-    return switch_language(tag);
+    const char *lang = switch_language(tag);
+    return RT_SMO ? smo_language_or_fallback(lang) : lang;
 }
 
 // LanguageCode GetDesiredLanguage(): char[8] in x0
