@@ -45,7 +45,18 @@ while not (ROOT / 'tools' / 'shader_census.py').is_file() and ROOT != ROOT.paren
     ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT / 'tools'))
 import shader_list  # noqa: E402
-from shader_census import inventory  # noqa: E402
+from shader_census import inventory as totk_inventory  # noqa: E402
+
+
+def inventory_for(version, romfs, exefs, everything=True):
+    """shader_census.inventory, or smo_shader_census.inventory for an smo-v* build: SMO packs its RomFS as Yaz0
+    (.szs) SARC archives where TotK uses zstd with dictionaries, so the two need different readers; their return
+    shape (shaders dict, rejected count) and the record layout this script writes are otherwise the same.
+    smo_shader_census.inventory has no default for everything, unlike shader_census.inventory, hence this wrapper."""
+    if version.startswith('smo'):
+        import smo_shader_census
+        return smo_shader_census.inventory(romfs, exefs, everything)
+    return totk_inventory(romfs, exefs, everything)
 
 STAGES = {'vs': 0, 'ps': 4, 'cs': 5}                       # runtime/gfx.h GFX_STAGE_*
 TEX = [None, '1d', '1darray', 'buffer', '2d', '2darray', '2dms', '2dmsarray', '3d', 'cube', 'cubearray']
@@ -155,14 +166,16 @@ def main():
     variants, prio = parse_list(read_list(a.list))
     extracted = ROOT / 'build' / 'extracted' / a.version
     listed = len(variants)
-    shaders, _ = inventory(a.romfs or extracted / 'romfs', a.exefs or extracted / 'exefs', everything=False)
+    shaders, _ = inventory_for(a.version, a.romfs or extracted / 'romfs', a.exefs or extracted / 'exefs',
+                                everything=False)
     # A missing list row says nothing about the walk: the list covers several versions, and 1.1.1 holds 17,587 of its
     # 41,414 rows, so most rows are absent because the game does not have them, not because the walk missed them. A walk
-    # that found next to nothing does say something: the shader directories have moved.
+    # that found next to nothing does say something: the shader directories have moved. SMO has no list rows at all
+    # (the MacNativeGames list is TotK-only), so it always takes this branch and reads every RomFS file.
     if len(shaders) < max(64, listed // 20):
         print(f'only {len(shaders)} shaders found of the {listed} listed variants: reading every RomFS file instead',
               flush=True)
-        shaders, _ = inventory(a.romfs or extracted / 'romfs', a.exefs or extracted / 'exefs')
+        shaders, _ = inventory_for(a.version, a.romfs or extracted / 'romfs', a.exefs or extracted / 'exefs')
     t1 = time.monotonic()
     progs, recs, seen, skipped = {}, [], set(), {'not in this version': 0, 'stage': 0}
     variants += [(key, DEFAULT) for key in sorted(shaders)]
@@ -205,15 +218,16 @@ def main():
           f'seed written in {time.monotonic() - t0:.1f} s', flush=True)
     if a.no_run:
         return 0
-    exe = out / ('totk.exe' if os.name == 'nt' else 'totk')
+    stem = 'smo' if a.version.startswith('smo') else 'totk'   # runtime/host.h RT_STEM
+    exe = out / (f'{stem}.exe' if os.name == 'nt' else stem)
     r = subprocess.run([str(exe), '--prepare-shaders'], cwd=str(out))
     for _ in range(RETRIES):
         if not r.returncode or not driver_crashed(out):
             break
         print(f'prepare_shaders: the graphics driver crashed while building shaders (rc={r.returncode}); building them '
-              'again without the variants it was building (totk.exe --warm-shaders)', flush=True)
+              f'again without the variants it was building ({exe.name} --warm-shaders)', flush=True)
         r = subprocess.run([str(exe), '--warm-shaders'], cwd=str(out))
-    print(f'totk.exe --prepare-shaders: rc={r.returncode}; total {time.monotonic() - t0:.1f} s')
+    print(f'{exe.name} --prepare-shaders: rc={r.returncode}; total {time.monotonic() - t0:.1f} s')
     return r.returncode
 
 
