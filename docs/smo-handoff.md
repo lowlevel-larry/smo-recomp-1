@@ -175,6 +175,22 @@ o VP9 `.webm` do TotK não passa por aqui) caía na biblioteca, que abre o NVDEC
 royalties de patente do H.264). Build limpo, DLL carrega (974.944 bytes). Não confirmado em jogo de verdade ainda:
 é preciso navegar o menu manualmente até a primeira cutscene para validar.
 
+**Queda de FPS por tradução/compilação de shader ao vivo, e nome da janela (corrigido 2026-11-06):**
+`tools/prepare_shaders.py` chamava `shader_census.inventory()` sem condição, que só lê os pacotes zstd+dicionário do
+TotK; no SMO (RomFS em Yaz0, `.szs`) isso dava `KeyError: 'Pack/ZsDic.pack.zs'`, então o passo nunca rodava e todo
+shader era traduzido e compilado na hora durante o jogo — os maiores picos de frame nos logs (até ~1 s) eram
+`shader translation` + `pipeline build`, não falta de CPU/GPU (por isso o uso de máquina parecia baixo: o jogo fica
+esperando, não processando). Agora `inventory_for()` escolhe `tools/smo_shader_census.py` (que já existia e
+funciona, reaproveitado também pelo censo manual) para uma build `smo-v*`, e o nome do exe usado para
+`--prepare-shaders`/`--warm-shaders` também passou a ser `smo.exe` em vez de `totk.exe` fixo. Precisa de `oead`
+também em `.venv-py314` (adicionado a `tools/requirements-py314.txt`; `prepare_shaders.py` roda em 3.14 por causa de
+`compression.zstd` do lado do TotK, mas agora importa `smo_shader_census.py`, que precisa de `oead`). Testado:
+10.965 shaders, 0 falhas, todos compilados no cache do driver NVIDIA em ~22 s numa segunda passada (já em cache).
+Rodar depois de cada `build_game.py`: `.venv-py314\Scripts\python tools\prepare_shaders.py build\smo-v141 --version
+smo-v141`.
+`gfx_window_win.c` tinha o título da janela fixo em `L"TotK Recomp"` mesmo numa build SMO (`RT_NAME` existe
+exatamente para isso e o caminho SDL do Linux já usava); agora usa `RT_SMO ? L"SMO Recomp" : L"TotK Recomp"`.
+
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
 2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
