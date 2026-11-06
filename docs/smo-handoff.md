@@ -203,6 +203,12 @@ no SMO lê sempre todas as pastas (só as de início já passam do limiar do fal
 Também prepara, para todo vertex shader, a variante com o atributo 11 `uint` (índices de osso): das 1.186 variantes
 encontradas, 1.064 eram a padrão e as 122 restantes eram todas essa; o atributo 11 é lido como float nas outras 41.
 
+**Opções gráficas do SMO sem efeito no primeiro build Windows (corrigido 2026-11-06):** o lift tinha sido feito
+sem `--patches recomp\patches-smo-v141.txt` (o passo 7 do LEIA-PRIMEIRO omitia), então `patches.h` saiu com
+`RT_PATCH_COUNT 0` e `smo_1080`, `smo_lod`, `smo_photo_quality` e `smo_photo60` no `smo.ini` não faziam nada (o log
+não tem linha `patches:` e diz `scene 1600x900` mesmo com `smo_1080 = 1`). Com o lift refeito com `--patches`:
+`patches: smo1080 on, ...` e `scene 1920x1080 (TOTK_SMO_1080)`. Lift do SMO é sempre com `--patches`.
+
 ## Próximo
 1. Corrigir o passe final (acima) → item F4 frame completo; depois validar a tela de título.
 2. Firmware do usuário (opcional): `tools/extract_fonts.py` para fontes reais.
