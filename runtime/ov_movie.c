@@ -30,9 +30,6 @@
 
 #include <vpx/vp8dx.h>
 #include <vpx/vpx_decoder.h>
-#ifndef _WIN32
-#include <dlfcn.h>
-#endif
 
 #include "cfg.h"
 #include "host.h"
@@ -83,20 +80,33 @@ struct H264Vtbl {
 };
 static struct { int state; long (*create)(H264Dec **); void (*destroy)(H264Dec *); } H264;   // state 1 loaded, -1 absent
 
+// OpenH264 names searched, in order: the shared Linux sonames (a system package), then the Cisco Windows binary
+// (BSD-licensed source, but its compiled .dll carries H.264 patent royalties Cisco pays for that exact binary, so it
+// is fetched separately rather than linked in; tools/fetch_openh264.py puts it next to the exe, as Firefox does).
 static int h264_available(void) {
-#ifndef _WIN32
     if (!H264.state) {
-        const char *names[] = {"libopenh264.so.8", "libopenh264.so.7", "libopenh264.so"};
+        static const char *const names[] = {"libopenh264.so.8", "libopenh264.so.7", "libopenh264.so"};   // Linux
         void *lib = NULL;
-        for (int i = 0; i < 3 && !lib; i++) lib = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
+        for (size_t i = 0; i < sizeof names / sizeof *names && !lib; i++) lib = plat_lib_open(names[i]);
+        if (!lib) {   // Windows: openh264.dll next to the exe (a bare name only searches System32)
+            char exe[1024];
+            if (plat_exe_path(exe, sizeof exe)) {
+                char *slash = strrchr(exe, '\\');
+                if (!slash) slash = strrchr(exe, '/');
+                if (slash) {
+                    strcpy(slash + 1, "openh264.dll");
+                    lib = plat_lib_open(exe);
+                }
+            }
+        }
         if (lib) {
-            H264.create = (long (*)(H264Dec **))dlsym(lib, "WelsCreateDecoder");
-            H264.destroy = (void (*)(H264Dec *))dlsym(lib, "WelsDestroyDecoder");
+            H264.create = (long (*)(H264Dec **))plat_lib_sym(lib, "WelsCreateDecoder");
+            H264.destroy = (void (*)(H264Dec *))plat_lib_sym(lib, "WelsDestroyDecoder");
         }
         H264.state = H264.create && H264.destroy ? 1 : -1;
-        rt_log("movie: H.264 decoder: %s", H264.state > 0 ? "OpenH264" : "OpenH264 not found (install openh264)");
+        rt_log("movie: H.264 decoder: %s", H264.state > 0 ? "OpenH264" : "OpenH264 not found (install openh264, or "
+               "on Windows run tools/fetch_openh264.py)");
     }
-#endif
     return H264.state > 0;
 }
 
