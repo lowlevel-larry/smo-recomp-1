@@ -128,6 +128,72 @@ static void log_open(int game) {
     rt_log("log: %s", g_log_path);
 }
 
+// Crash archive: logs/<stem>.log rotates away after LOG_KEEP starts, so a run that ends in a FATAL line (rt_fatal, the
+// crash reporter) also copies its whole log to logs/crashes/<stem>-<local time>.log and appends one line to
+// logs/crashes/crashes.txt (time, file, the FATAL line). The folder keeps the CRASH_KEEP newest copies; the names sort
+// by time, so the oldest go first. Runs once, on the dying thread, after the report is written.
+#define CRASH_KEEP 30
+#define CRASH_LIST_CAP 256
+typedef struct { char names[CRASH_LIST_CAP][64]; int n; } CrashList;
+
+static int crash_list_add(const char *name, void *ctx) {
+    CrashList *l = ctx;
+    if (strlen(name) < sizeof l->names[0]) strcpy(l->names[l->n++], name);
+    return l->n < CRASH_LIST_CAP;
+}
+
+static int crash_name_cmp(const void *a, const void *b) { return strcmp(a, b); }
+
+void rt_log_keep_crash(void) {
+    static volatile int32_t done;
+    if (plat_xchg32(&done, 1) || __atomic_load_n(&g_log_state, __ATOMIC_ACQUIRE) != LOG_FILE) return;
+    char dir[PLAT_PATH_MAX * 3 + 16], path[PLAT_PATH_MAX * 3 + 96], line[512];
+    snprintf(dir, sizeof dir, "%s", g_log_path);
+    char *cut = strrchr(dir, '/');
+    if (!cut) return;
+    strcpy(cut, "/crashes");
+    plat_file_mkdir_p(dir);
+    struct tm t;
+    plat_local_time(&t);
+    char stamp[32], name[64];
+    snprintf(stamp, sizeof stamp, "%04d-%02d-%02d_%02d-%02d-%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour,
+             t.tm_min, t.tm_sec);
+    snprintf(name, sizeof name, "%s-%s.log", RT_STEM, stamp);
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    uint64_t n = 0;
+    char *log = (char *)plat_file_read(g_log_path, &n);
+    if (!log) return;
+    plat_file_write(path, log, (size_t)n);
+    const char *fatal = NULL;   // the first FATAL line: the cause; later ones are the report's own
+    for (uint64_t i = 0; i + 7 <= n && !fatal; i++)
+        if ((i == 0 || log[i - 1] == '\n') && !memcmp(log + i, "FATAL: ", 7)) fatal = log + i;
+    int len = 0;
+    if (fatal)
+        while (fatal + len < log + n && fatal[len] != '\n' && fatal[len] != '\r' && len < 300) len++;
+    int k = snprintf(line, sizeof line, "%s  %s  %.*s\n", stamp, name, len, fatal ? fatal : "(no FATAL line)");
+    free(log);
+    snprintf(path, sizeof path, "%s/crashes.txt", dir);
+    uint64_t old_n = 0;   // append: plat_append_open truncates, so the index is rewritten with the new line after it
+    uint8_t *old = plat_file_read(path, &old_n);
+    char *all = malloc(old_n + (size_t)k);
+    if (all) {
+        if (old) memcpy(all, old, old_n);
+        memcpy(all + old_n, line, (size_t)k);
+        plat_file_write(path, all, old_n + (size_t)k);
+        free(all);
+    }
+    free(old);
+    CrashList *l = calloc(1, sizeof *l);
+    if (!l) return;
+    plat_file_list(dir, ".log", crash_list_add, l);
+    qsort(l->names, (size_t)l->n, sizeof l->names[0], crash_name_cmp);
+    for (int i = 0; i < l->n - CRASH_KEEP; i++) {   // oldest first
+        snprintf(path, sizeof path, "%s/%s", dir, l->names[i]);
+        plat_file_delete(path);
+    }
+    free(l);
+}
+
 static void parse_trace(void) {
     const char *e = cfg_get("TOTK_TRACE");   // no default: nothing is traced when unset
     if (!e) return;
@@ -254,6 +320,7 @@ static void crash_handler(const PlatCrash *x) {
         rt_logf("  not on a guest thread\n");
     }
     fflush(stderr);
+    rt_log_keep_crash();
     plat_exit(71);
 }
 

@@ -54,6 +54,7 @@ void rt_fatal(const char *fmt, ...) {
     rt_log("fatal: memory commit: this process %.0f MB, the system %.0f of %.0f MB", proc, used, limit);
     fflush(stdout);
     fflush(stderr);
+    rt_log_keep_crash();
     _Exit(70);
 }
 
